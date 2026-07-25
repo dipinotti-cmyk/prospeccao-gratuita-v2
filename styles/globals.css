@@ -115,4 +115,18 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   max-height: 60px; overflow: hidden;
 }
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.row-actions button { font-size: 11px; padding: 5px 9px; }
+.row-actions button { font-size: 12px; padding: 7px 11px; }
+
+/* Mobile: nada pode estourar a largura da tela — tabela rola dentro do
+   próprio painel, cards empilham, botões quebram linha. */
+@media (max-width: 640px) {
+  .wrap { padding: 20px 12px 60px; }
+  html, body { font-size: 13px; }
+  .panel { padding: 14px; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  th, td { padding: 7px 6px; font-size: 12px; }
+  .stat-card .value { font-size: 19px; }
+  .modal { padding: 16px; }
+}
+table { min-width: 560px; }
+.panel > table, .panel div > table { width: 100%; }

@@ -40,8 +40,20 @@ export default async function handler(req, res) {
     // sem depender de ninguém lembrar da troca de caractere.
     const actorId = (process.env.APIFY_ACTOR_ID || '').trim().replace('/', '~');
 
+    // Webhook de retorno: sem isso a Apify termina a busca mas nunca avisa o
+    // app, e os leads ficam presos lá (rodada eternamente "running" com 0
+    // salvos — bug real visto em produção em 25/07/2026). O parâmetro
+    // "webhooks" é um JSON em base64 com a URL a chamar quando a run termina.
+    const baseUrl = process.env.APP_BASE_URL || `https://${req.headers.host}`;
+    const webhooks = Buffer.from(JSON.stringify([
+      {
+        eventTypes: ['ACTOR.RUN.SUCCEEDED'],
+        requestUrl: `${baseUrl}/api/apify-webhook`,
+      },
+    ])).toString('base64');
+
     const apifyResp = await fetch(
-      `https://api.apify.com/v2/acts/${actorId}/runs?token=${process.env.APIFY_TOKEN}`,
+      `https://api.apify.com/v2/acts/${actorId}/runs?token=${process.env.APIFY_TOKEN}&webhooks=${encodeURIComponent(webhooks)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
