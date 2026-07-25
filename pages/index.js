@@ -18,6 +18,7 @@ export default function Dashboard() {
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showRunForm, setShowRunForm] = useState(false);
+  const [showNicheManager, setShowNicheManager] = useState(false);
   const [editingLead, setEditingLead] = useState(null);
 
   async function loadAll() {
@@ -116,19 +117,54 @@ export default function Dashboard() {
     setTimeout(() => setInfo(null), 2000);
   }
 
+  // Abre o WhatsApp/e-mail já com o texto pronto (só falta apertar enviar lá) e
+  // marca o lead como "enviado" — não tem como o painel saber se a mensagem
+  // realmente saiu (isso acontece fora daqui, no app do WhatsApp/e-mail), então
+  // clicar em "abrir" é o sinal disponível, igual funcionava na v1.
+  function openAndMarkSent(lead) {
+    if (lead.channel === 'whatsapp') {
+      const digits = String(lead.whatsapp || lead.phone || '').replace(/\D/g, '');
+      if (!digits) { setError('Esse lead não tem WhatsApp cadastrado.'); return; }
+      const text = encodeURIComponent(lead.message_wa || '');
+      window.open(`https://wa.me/${digits}?text=${text}`, '_blank');
+    } else {
+      const subject = encodeURIComponent(lead.email_subject || '');
+      const body = encodeURIComponent(lead.message_email || '');
+      window.open(`mailto:${lead.email || ''}?subject=${subject}&body=${body}`, '_blank');
+    }
+    if (lead.status === 'novo') {
+      updateLead(lead.id, { status: 'enviado', sent_at: new Date().toISOString() });
+    }
+  }
+
+  // Contador de segurança: quantos leads foram marcados como enviados hoje
+  // (sent_at = hoje). Acima de 15/dia é risco real de bloqueio de número no
+  // WhatsApp — por isso o alerta, não é só estética.
+  const sentToday = useMemo(() => {
+    const today = new Date().toDateString();
+    return leads.filter((l) => l.sent_at && new Date(l.sent_at).toDateString() === today).length;
+  }, [leads]);
+  const LIMITE_DIARIO = 15;
+
   return (
     <div className="wrap">
       <header className="topbar">
         <h1>prospecção<span>.</span>gratuita</h1>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button className="btn secondary" onClick={loadAll}>Atualizar</button>
-          <button className="btn secondary" onClick={() => setShowRunForm(true)}>Nova prospecção</button>
-          <button className="btn" onClick={() => setShowAddModal(true)}>+ Lead manual</button>
+          <button className="btn secondary" onClick={() => setShowNicheManager(true)}>Nichos</button>
+          <button className="btn secondary" onClick={() => setShowAddModal(true)}>+ Lead manual</button>
+          <button className="btn" onClick={() => setShowRunForm(true)}>Nova prospecção</button>
         </div>
       </header>
 
       {error && <div className="error-banner">⚠ {error}</div>}
       {info && <div className="info-banner">{info}</div>}
+      {sentToday > LIMITE_DIARIO && (
+        <div className="error-banner">
+          ⚠ Você já marcou {sentToday} mensagens como enviadas hoje — acima de {LIMITE_DIARIO}/dia é risco real de bloqueio do número no WhatsApp. Considere parar por hoje.
+        </div>
+      )}
 
       <section className="stats-grid">
         <div className="stat-card">
@@ -150,6 +186,12 @@ export default function Dashboard() {
         <div className="stat-card">
           <div className="label">Taxa de resposta</div>
           <div className="value">{stats.responseRate.toFixed(0)}%</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Enviadas hoje</div>
+          <div className={`value ${sentToday > LIMITE_DIARIO ? 'red' : ''}`} style={sentToday > LIMITE_DIARIO ? { color: 'var(--red)' } : undefined}>
+            {sentToday}/{LIMITE_DIARIO}
+          </div>
         </div>
       </section>
 
@@ -299,6 +341,25 @@ export default function Dashboard() {
                         <button className="btn secondary" onClick={() => setEditingLead(lead)}>Editar msg</button>
                         <button className="btn secondary" onClick={() => copyMessage(lead)}>Copiar</button>
                         <button className="btn secondary" onClick={() => regenerate(lead.id)}>Gerar</button>
+                        {lead.status === 'novo' && (
+                          <>
+                            <button className="btn secondary" onClick={() => openAndMarkSent(lead)}>
+                              {lead.channel === 'whatsapp' ? 'Abrir WhatsApp' : 'Abrir e-mail'}
+                            </button>
+                            <button
+                              className="btn secondary"
+                              onClick={() => updateLead(lead.id, { status: 'enviado', sent_at: new Date().toISOString() })}
+                            >
+                              Marcar enviado
+                            </button>
+                          </>
+                        )}
+                        {(lead.status === 'enviado' || lead.status === 'aguardando_resposta') && (
+                          <>
+                            <button className="btn secondary" onClick={() => updateLead(lead.id, { status: 'negociacao', replied: true })}>Respondeu</button>
+                            <button className="btn secondary" onClick={() => updateLead(lead.id, { status: 'descartado' })}>Sem interesse</button>
+                          </>
+                        )}
                         <button className="btn danger" onClick={() => deleteLead(lead.id)}>Excluir</button>
                       </div>
                     </td>
@@ -378,13 +439,21 @@ export default function Dashboard() {
           }}
         />
       )}
+
+      {showNicheManager && (
+        <NicheManagerModal
+          niches={niches}
+          onClose={() => setShowNicheManager(false)}
+          onChanged={(updated) => setNiches(updated)}
+        />
+      )}
     </div>
   );
 }
 
 function AddLeadModal({ niches, onClose, onCreated }) {
   const [form, setForm] = useState({
-    name: '', category: '', city: '', niche_slug: '', channel: 'whatsapp',
+    name: '', category: '', city: '', niche_slug: '', channel: 'whatsapp', oferta: 'site',
     whatsapp: '', email: '', status: 'novo', valor: '', notes: '',
   });
   const [saving, setSaving] = useState(false);
@@ -446,6 +515,14 @@ function AddLeadModal({ niches, onClose, onCreated }) {
             <select value={form.channel} onChange={(e) => set('channel', e.target.value)}>
               <option value="whatsapp">WhatsApp</option>
               <option value="email">E-mail</option>
+            </select>
+          </div>
+          <div className="form-row">
+            <label>Oferta</label>
+            <select value={form.oferta} onChange={(e) => set('oferta', e.target.value)}>
+              <option value="site">Site profissional</option>
+              <option value="automacao">Automação de WhatsApp (CRM + lembretes)</option>
+              <option value="completo">Pacote completo (site + automação)</option>
             </select>
           </div>
           <div className="form-row">
@@ -534,6 +611,7 @@ function EditMessageModal({ lead, onClose, onSave }) {
 function RunFormModal({ niches, onClose, onDone, onError }) {
   const [niche, setNiche] = useState(niches[0]?.slug || '');
   const [city, setCity] = useState('');
+  const [oferta, setOferta] = useState('site');
   const [saving, setSaving] = useState(false);
 
   async function submit(e) {
@@ -543,7 +621,7 @@ function RunFormModal({ niches, onClose, onDone, onError }) {
       const resp = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ niche, city }),
+        body: JSON.stringify({ niche, city, oferta }),
       });
       const json = await resp.json();
       if (!resp.ok) throw new Error(json.error || 'Falha ao disparar a busca.');
@@ -572,6 +650,14 @@ function RunFormModal({ niches, onClose, onDone, onError }) {
             <label>Cidade</label>
             <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Osasco, SP" required />
           </div>
+          <div className="form-row">
+            <label>Oferta</label>
+            <select value={oferta} onChange={(e) => setOferta(e.target.value)}>
+              <option value="site">Site profissional</option>
+              <option value="automacao">Automação de WhatsApp (CRM + lembretes)</option>
+              <option value="completo">Pacote completo (site + automação)</option>
+            </select>
+          </div>
           <div className="modal-actions">
             <button type="button" className="btn secondary" onClick={onClose}>Cancelar</button>
             <button type="submit" className="btn" disabled={saving}>{saving ? 'Disparando...' : 'Buscar leads'}</button>
@@ -579,5 +665,158 @@ function RunFormModal({ niches, onClose, onDone, onError }) {
         </form>
       </div>
     </div>
+  );
+}
+
+const NICHE_FIELD_LABELS = [
+  { key: 'label', label: 'Nome de exibição', placeholder: 'Ex: Manicure / Nail designer' },
+  { key: 'gmaps_query', label: 'Busca no Google Maps', placeholder: 'manicure em {cidade}' },
+  { key: 'leitor', label: 'Quem lê primeiro', placeholder: 'Ex: a própria profissional, atende sozinha...' },
+  { key: 'tom', label: 'Tom de voz', placeholder: 'Ex: informal, próximo, emoji ok' },
+  { key: 'solucao', label: 'Solução / argumento', placeholder: 'Ex: portfólio visual + agendamento' },
+  { key: 'elogio_sugestao', label: 'Elogio + sugestão', placeholder: 'Como elogiar antes de sugerir a melhoria' },
+  { key: 'pedido_demo', label: 'Pedido de demo grátis', placeholder: 'Quando/como oferecer demonstração grátis' },
+];
+
+function NicheManagerModal({ niches, onClose, onChanged }) {
+  const [editingId, setEditingId] = useState(null); // id do nicho em edição, ou 'new'
+  const [err, setErr] = useState(null);
+
+  async function refresh() {
+    const json = await fetch('/api/niches').then((r) => r.json());
+    onChanged(json.niches || []);
+  }
+
+  async function saveNiche(id, form) {
+    setErr(null);
+    try {
+      if (id === 'new') {
+        const resp = await fetch('/api/niches', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.error || 'Falha ao criar nicho.');
+      } else {
+        const resp = await fetch(`/api/niches/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        });
+        const json = await resp.json();
+        if (!resp.ok) throw new Error(json.error || 'Falha ao salvar nicho.');
+      }
+      await refresh();
+      setEditingId(null);
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  async function deleteNiche(id) {
+    if (!confirm('Excluir este nicho?')) return;
+    setErr(null);
+    try {
+      const resp = await fetch(`/api/niches/${id}`, { method: 'DELETE' });
+      const json = await resp.json();
+      if (!resp.ok) throw new Error(json.error || 'Falha ao excluir nicho.');
+      await refresh();
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+        <h3>Nichos</h3>
+        {err && <div className="error-banner">{err}</div>}
+        <p className="muted" style={{ marginBottom: 14, fontSize: 12.5 }}>
+          Cada nicho calibra o jeito que a IA escreve a mensagem: quem lê primeiro, tom de voz, o argumento certo, como elogiar antes de sugerir, e quando pedir demonstração grátis.
+        </p>
+
+        {editingId === 'new' ? (
+          <NicheForm initial={{}} onCancel={() => setEditingId(null)} onSave={(form) => saveNiche('new', form)} isNew />
+        ) : (
+          <button className="btn secondary" style={{ marginBottom: 14 }} onClick={() => setEditingId('new')}>+ Novo nicho</button>
+        )}
+
+        <div style={{ maxHeight: 420, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {niches.map((n) => (
+            <div key={n.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+              {editingId === n.id ? (
+                <NicheForm initial={n} onCancel={() => setEditingId(null)} onSave={(form) => saveNiche(n.id, form)} />
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{n.label}</div>
+                    <div className="muted" style={{ fontSize: 12 }}>{n.slug}</div>
+                  </div>
+                  <div className="row-actions">
+                    <button className="btn secondary" onClick={() => setEditingId(n.id)}>Editar</button>
+                    <button className="btn danger" onClick={() => deleteNiche(n.id)}>Excluir</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="modal-actions">
+          <button type="button" className="btn secondary" onClick={onClose}>Fechar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NicheForm({ initial, onSave, onCancel, isNew }) {
+  const [form, setForm] = useState({
+    slug: initial.slug || '',
+    label: initial.label || '',
+    gmaps_query: initial.gmaps_query || '',
+    leitor: initial.leitor || '',
+    tom: initial.tom || '',
+    solucao: initial.solucao || '',
+    elogio_sugestao: initial.elogio_sugestao || '',
+    pedido_demo: initial.pedido_demo || '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  function set(field, value) {
+    setForm((f) => ({ ...f, [field]: value }));
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true);
+    await onSave(form);
+    setSaving(false);
+  }
+
+  return (
+    <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {isNew && (
+        <div className="form-row">
+          <label>Slug (identificador único)</label>
+          <input value={form.slug} onChange={(e) => set('slug', e.target.value)} placeholder="Ex: personal-trainer" required />
+        </div>
+      )}
+      {NICHE_FIELD_LABELS.map((f) => (
+        <div className="form-row" key={f.key}>
+          <label>{f.label}</label>
+          {f.key === 'label' || f.key === 'gmaps_query' ? (
+            <input value={form[f.key]} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder} required={f.key === 'label'} />
+          ) : (
+            <textarea rows={2} value={form[f.key]} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder} />
+          )}
+        </div>
+      ))}
+      <div className="modal-actions">
+        <button type="button" className="btn secondary" onClick={onCancel}>Cancelar</button>
+        <button type="submit" className="btn" disabled={saving}>{saving ? 'Salvando...' : 'Salvar nicho'}</button>
+      </div>
+    </form>
   );
 }

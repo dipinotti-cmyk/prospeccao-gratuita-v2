@@ -14,16 +14,18 @@ export default async function handler(req, res) {
     );
   }
 
-  const { niche, city } = req.body || {};
+  const { niche, city, oferta } = req.body || {};
   if (!niche || !city) {
     return apiError(res, 400, 'Informe "niche" e "city".');
   }
+
+  const ofertaValida = ['site', 'automacao', 'completo'].includes(oferta) ? oferta : 'site';
 
   try {
     const db = supabaseAdmin();
     const { data: run, error: runErr } = await db
       .from('prospeccao_runs')
-      .insert({ niche_slug: niche, city, source: 'manual', status: 'running' })
+      .insert({ niche_slug: niche, city, source: 'manual', status: 'running', oferta: ofertaValida })
       .select()
       .single();
     if (runErr) return apiError(res, 500, `Falha ao criar run: ${runErr.message}`);

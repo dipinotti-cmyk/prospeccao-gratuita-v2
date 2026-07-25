@@ -46,6 +46,7 @@ export default async function handler(req, res) {
         email: body.email || null,
         website: body.website || null,
         channel,
+        oferta: ['site', 'automacao', 'completo'].includes(body.oferta) ? body.oferta : 'site',
         status: body.status || 'novo',
         valor: body.valor ?? null,
         notes: body.notes || null,
