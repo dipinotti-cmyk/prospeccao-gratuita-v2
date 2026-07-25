@@ -18,6 +18,7 @@ export default function Dashboard() {
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showRunForm, setShowRunForm] = useState(false);
+  const [editingLead, setEditingLead] = useState(null);
 
   async function loadAll() {
     setLoading(true);
@@ -232,6 +233,7 @@ export default function Dashboard() {
                     </td>
                     <td>
                       <div className="row-actions">
+                        <button className="btn secondary" onClick={() => setEditingLead(lead)}>Editar msg</button>
                         <button className="btn secondary" onClick={() => copyMessage(lead)}>Copiar</button>
                         <button className="btn secondary" onClick={() => regenerate(lead.id)}>Gerar</button>
                         <button className="btn danger" onClick={() => deleteLead(lead.id)}>Excluir</button>
@@ -300,6 +302,17 @@ export default function Dashboard() {
             setTimeout(() => setInfo(null), 4000);
           }}
           onError={(msg) => setError(msg)}
+        />
+      )}
+
+      {editingLead && (
+        <EditMessageModal
+          lead={editingLead}
+          onClose={() => setEditingLead(null)}
+          onSave={async (patch) => {
+            await updateLead(editingLead.id, patch);
+            setEditingLead(null);
+          }}
         />
       )}
     </div>
@@ -397,6 +410,57 @@ function AddLeadModal({ niches, onClose, onCreated }) {
           <div className="modal-actions">
             <button type="button" className="btn secondary" onClick={onClose}>Cancelar</button>
             <button type="submit" className="btn" disabled={saving}>{saving ? 'Salvando...' : 'Salvar lead'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function EditMessageModal({ lead, onClose, onSave }) {
+  const isEmail = lead.channel === 'email';
+  const [subject, setSubject] = useState(lead.email_subject || '');
+  const [body, setBody] = useState((isEmail ? lead.message_email : lead.message_wa) || '');
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true);
+    const patch = isEmail
+      ? { email_subject: subject, message_email: body }
+      : { message_wa: body };
+    await onSave(patch);
+    setSaving(false);
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Escrever mensagem — {lead.name}</h3>
+        <p className="muted" style={{ marginBottom: 14, fontSize: 12.5 }}>
+          Sem OPENAI_API_KEY configurada, a mensagem não é gerada sozinha — escreva aqui
+          e o resto do fluxo (copiar, enviar manual) funciona igual.
+        </p>
+        <form onSubmit={submit}>
+          {isEmail && (
+            <div className="form-row">
+              <label>Assunto do e-mail</label>
+              <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Uma ideia rápida para o site da {'{'}nome{'}'}" />
+            </div>
+          )}
+          <div className="form-row">
+            <label>{isEmail ? 'Corpo do e-mail' : 'Mensagem de WhatsApp'}</label>
+            <textarea
+              rows={8}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder={isEmail ? 'Escreva o corpo do e-mail...' : 'Escreva a mensagem de WhatsApp...'}
+              autoFocus
+            />
+          </div>
+          <div className="modal-actions">
+            <button type="button" className="btn secondary" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="btn" disabled={saving}>{saving ? 'Salvando...' : 'Salvar mensagem'}</button>
           </div>
         </form>
       </div>
