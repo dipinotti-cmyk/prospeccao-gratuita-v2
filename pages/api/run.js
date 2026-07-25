@@ -31,8 +31,15 @@ export default async function handler(req, res) {
     const { data: nicheRow } = await db.from('prospeccao_niches').select('*').eq('slug', niche).single();
     const searchString = (nicheRow?.gmaps_query || `${niche} em {cidade}`).replace('{cidade}', city);
 
+    // A Apify identifica actors públicos como "usuario/nome-do-actor" (é assim que
+    // aparece na store, e é o formato natural pra colar na env var) mas a API REST
+    // exige "usuario~nome-do-actor" (til, não barra) — uma barra literal na URL
+    // quebra o roteamento e devolve 404. Normalizamos aqui pra aceitar os dois formatos
+    // sem depender de ninguém lembrar da troca de caractere.
+    const actorId = (process.env.APIFY_ACTOR_ID || '').trim().replace('/', '~');
+
     const apifyResp = await fetch(
-      `https://api.apify.com/v2/acts/${process.env.APIFY_ACTOR_ID}/runs?token=${process.env.APIFY_TOKEN}`,
+      `https://api.apify.com/v2/acts/${actorId}/runs?token=${process.env.APIFY_TOKEN}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { STATUSES, statusLabel, statusColor, formatValor, computeStats } from '../lib/statuses';
+import { STATUSES, statusLabel, statusColor, formatValor, computeStats, computeNicheStats } from '../lib/statuses';
 
 const NICHE_FALLBACK = [];
 
@@ -45,6 +45,11 @@ export default function Dashboard() {
   }, []);
 
   const stats = useMemo(() => computeStats(leads), [leads]);
+  const nicheStats = useMemo(() => computeNicheStats(leads, niches, runs), [leads, niches, runs]);
+  const custoApifyTotal = useMemo(() => runs.reduce((s, r) => s + Number(r.cost_apify || 0), 0), [runs]);
+  const custoOpenaiTotal = useMemo(() => runs.reduce((s, r) => s + Number(r.cost_openai || 0), 0), [runs]);
+  const custoTotalGeral = custoApifyTotal + custoOpenaiTotal;
+  const custoPorFechado = stats.closedCount > 0 ? custoTotalGeral / stats.closedCount : 0;
 
   const filteredLeads = useMemo(() => {
     return leads.filter((l) => {
@@ -147,6 +152,64 @@ export default function Dashboard() {
           <div className="value">{stats.responseRate.toFixed(0)}%</div>
         </div>
       </section>
+
+      <section className="stats-grid">
+        <div className="stat-card">
+          <div className="label">Custo Apify</div>
+          <div className="value">{formatValor(custoApifyTotal)}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Custo OpenAI</div>
+          <div className="value">{formatValor(custoOpenaiTotal)}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Custo total</div>
+          <div className="value">{formatValor(custoTotalGeral)}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Custo por fechamento</div>
+          <div className="value">{stats.closedCount > 0 ? formatValor(custoPorFechado) : '—'}</div>
+        </div>
+      </section>
+
+      <div className="panel">
+        <h2>Desempenho por nicho</h2>
+        <p className="muted" style={{ marginBottom: 12, fontSize: 12.5 }}>
+          Ordenado por retorno líquido (valor fechado menos custo de Apify + OpenAI) — os nichos que mais valem a pena aparecem primeiro.
+        </p>
+        {nicheStats.length === 0 ? (
+          <div className="empty-state muted">Ainda sem dados suficientes.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Nicho</th>
+                  <th>Leads</th>
+                  <th>Fechados</th>
+                  <th>Taxa conversão</th>
+                  <th>Valor fechado</th>
+                  <th>Custo</th>
+                  <th>Retorno líquido</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nicheStats.map((n) => (
+                  <tr key={n.slug}>
+                    <td>{n.label}</td>
+                    <td>{n.total}</td>
+                    <td>{n.fechados}</td>
+                    <td>{n.taxaConversao.toFixed(0)}%</td>
+                    <td>{formatValor(n.valorFechado)}</td>
+                    <td className="muted">{formatValor(n.custoTotal)}</td>
+                    <td className={n.retornoLiquido >= 0 ? 'text-green' : 'text-red'}>{formatValor(n.retornoLiquido)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       <div className="panel">
         <h2>Leads</h2>

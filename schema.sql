@@ -13,6 +13,7 @@ create table if not exists prospeccao_niches (
   slug          text unique not null,
   label         text not null,
   gmaps_query   text not null,
+  resumo        text,               -- contexto de tom/argumento pro prompt da OpenAI (add. 25/07/2026)
   created_at    timestamptz default now()
 );
 
@@ -79,14 +80,38 @@ create index if not exists idx_prospeccao_leads_niche on prospeccao_leads (niche
 create index if not exists idx_prospeccao_leads_created on prospeccao_leads (created_at);
 create index if not exists idx_prospeccao_leads_followup on prospeccao_leads (followup_due_at) where status in ('enviado', 'aguardando_resposta');
 
--- Seed de nichos padrão (mesmos do PRD original + os já usados)
+-- Seed de nichos: expandido em 25/07/2026 de 6 pra 26 nichos, cada um com
+-- "resumo" (contexto de tom/argumento que a IA usa pra calibrar a mensagem
+-- por tipo de negócio). Lista completa aplicada via migration
+-- "prospeccao_niches_resumo_e_expansao" diretamente no Supabase — ver ali
+-- pro texto de cada resumo. Abaixo, só a forma mínima de referência:
 insert into prospeccao_niches (slug, label, gmaps_query) values
   ('clinica-psicologia', 'Clínica de psicologia', 'clínica de psicologia em {cidade}'),
   ('mecanica', 'Mecânica', 'mecânica em {cidade}'),
   ('barbearia', 'Barbearia', 'barbearia em {cidade}'),
   ('salao-beleza', 'Salão de beleza', 'salão de beleza em {cidade}'),
   ('estetica', 'Clínica de estética', 'clínica de estética em {cidade}'),
-  ('advocacia', 'Escritório de advocacia', 'advocacia em {cidade}')
+  ('advocacia', 'Escritório de advocacia', 'advocacia em {cidade}'),
+  ('nutricionista', 'Nutricionista', 'nutricionista em {cidade}'),
+  ('dentista', 'Consultório odontológico', 'dentista em {cidade}'),
+  ('petshop', 'Pet shop', 'pet shop em {cidade}'),
+  ('contabilidade', 'Escritório de contabilidade', 'contabilidade em {cidade}'),
+  ('imobiliaria', 'Imobiliária', 'imobiliária em {cidade}'),
+  ('academia', 'Academia', 'academia em {cidade}'),
+  ('fisioterapia', 'Clínica de fisioterapia', 'fisioterapia em {cidade}'),
+  ('arquitetura', 'Escritório de arquitetura', 'escritório de arquitetura em {cidade}'),
+  ('buffet-eventos', 'Buffet e eventos', 'buffet de eventos em {cidade}'),
+  ('floricultura', 'Floricultura', 'floricultura em {cidade}'),
+  ('loja-roupas', 'Loja de roupas', 'loja de roupas em {cidade}'),
+  ('restaurante', 'Restaurante', 'restaurante em {cidade}'),
+  ('pizzaria', 'Pizzaria', 'pizzaria em {cidade}'),
+  ('padaria', 'Padaria e confeitaria', 'padaria em {cidade}'),
+  ('marcenaria', 'Marcenaria', 'marcenaria em {cidade}'),
+  ('autoescola', 'Autoescola', 'autoescola em {cidade}'),
+  ('funilaria', 'Funilaria e pintura automotiva', 'funilaria e pintura automotiva em {cidade}'),
+  ('chaveiro', 'Chaveiro', 'chaveiro em {cidade}'),
+  ('veterinaria', 'Clínica veterinária', 'clínica veterinária em {cidade}'),
+  ('escola-idiomas', 'Escola de idiomas', 'escola de idiomas em {cidade}')
 on conflict (slug) do nothing;
 
 -- Trigger simples pra manter updated_at em dia (nome namespaced de propósito,
