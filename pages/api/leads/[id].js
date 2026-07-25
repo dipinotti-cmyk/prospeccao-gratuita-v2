@@ -25,7 +25,7 @@ export default async function handler(req, res) {
       const allowed = [
         'status', 'valor', 'notes', 'phone', 'whatsapp', 'email',
         'message_wa', 'message_email', 'email_subject', 'replied',
-        'sent_at', 'followup_due_at', 'followup_sent_at', 'oferta', 'niche_slug',
+        'sent_at', 'followup_due_at', 'followup_sent_at', 'oferta', 'niche_slug', 'canal_envio',
       ];
       for (const key of allowed) {
         if (key in body) patch[key] = body[key];
