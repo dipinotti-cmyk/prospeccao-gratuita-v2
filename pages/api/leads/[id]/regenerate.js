@@ -1,6 +1,6 @@
 import { supabaseAdmin, apiError } from '../../../../lib/supabaseAdmin';
-import { generateLeadMessage } from '../../../../lib/generateMessage';
-import { openaiCallCostUsd } from '../../../../lib/pricing';
+import { generateLeadMessage, aiApiKey, AI_MODEL } from '../../../../lib/generateMessage';
+import { aiCallCostUsd } from '../../../../lib/pricing';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -13,11 +13,12 @@ export default async function handler(req, res) {
     return apiError(res, 400, 'ID de lead inválido.');
   }
 
-  if (!process.env.OPENAI_API_KEY) {
+  const apiKey = aiApiKey();
+  if (!apiKey) {
     return apiError(
       res,
       501,
-      'OPENAI_API_KEY não configurada. Escreva a mensagem manualmente por enquanto — assim que a chave for adicionada nas variáveis de ambiente da Vercel, a geração automática volta a funcionar.'
+      'Chave da Gemini não configurada (GEMINI_API_KEY, ou o valor antigo de OPENAI_API_KEY). Escreva a mensagem manualmente por enquanto — assim que a chave for adicionada nas variáveis de ambiente da Vercel, a geração automática volta a funcionar.'
     );
   }
 
@@ -34,14 +35,14 @@ export default async function handler(req, res) {
 
     let generated;
     try {
-      generated = await generateLeadMessage({ lead, niche, apiKey: process.env.OPENAI_API_KEY });
+      generated = await generateLeadMessage({ lead, niche, apiKey });
     } catch (genErr) {
       return apiError(res, 502, genErr.message);
     }
 
     const updatePayload = lead.channel === 'email'
-      ? { message_email: generated.message, email_subject: generated.subject || lead.email_subject, message_model: 'gpt-4o-mini' }
-      : { message_wa: generated.message, message_model: 'gpt-4o-mini' };
+      ? { message_email: generated.message, email_subject: generated.subject || lead.email_subject, message_model: generated.model || AI_MODEL }
+      : { message_wa: generated.message, message_model: generated.model || AI_MODEL };
 
     const { data: updated, error: updateErr } = await db
       .from('prospeccao_leads')
@@ -57,7 +58,7 @@ export default async function handler(req, res) {
     // várias vezes num lead. Leads criados manualmente (sem run_id) não têm
     // rodada pra atribuir — custo real do mesmo jeito, só não some no total por nicho.
     if (lead.run_id && generated.usage) {
-      const cost = openaiCallCostUsd(generated.usage);
+      const cost = aiCallCostUsd(generated.usage);
       const { data: run } = await db.from('prospeccao_runs').select('cost_openai, tokens_in, tokens_out').eq('id', lead.run_id).single();
       if (run) {
         await db

@@ -1,8 +1,13 @@
 {
   "crons": [
-    { "path": "/api/cron-followups", "schedule": "0 12 * * *" }
+    {
+      "path": "/api/cron-followups",
+      "schedule": "0 12 * * *"
+    }
   ],
   "functions": {
-    "pages/api/apify-webhook.js": { "maxDuration": 30 }
+    "pages/api/apify-webhook.js": {
+      "maxDuration": 60
+    }
   }
 }

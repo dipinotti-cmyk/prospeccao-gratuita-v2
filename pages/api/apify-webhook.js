@@ -1,6 +1,6 @@
 import { supabaseAdmin, apiError } from '../../lib/supabaseAdmin';
-import { generateLeadMessage } from '../../lib/generateMessage';
-import { openaiCallCostUsd } from '../../lib/pricing';
+import { generateLeadMessage, aiApiKey, AI_MODEL } from '../../lib/generateMessage';
+import { aiCallCostUsd } from '../../lib/pricing';
 
 // Recebe o callback da Apify quando uma run termina, filtra quem não tem
 // site próprio, separa em blocos WhatsApp/e-mail e salva como leads novos.
@@ -95,35 +95,52 @@ export default async function handler(req, res) {
       });
     }
 
-    // Geração automática de mensagem: roda em paralelo pra não somar tempo
-    // sequencial (podem ser até 20 leads). Se faltar a chave, ou se uma
-    // chamada específica falhar, o lead é salvo do mesmo jeito sem mensagem —
-    // dá pra usar "Editar msg" ou "Gerar" depois, nunca trava o salvamento.
+    // Geração automática de mensagem.
+    //
+    // 30/07/2026 (Gemini free tier): o disparo de tudo em paralelo virou 429
+    // na hora, porque o free tier limita requisições por minuto. Agora vai em
+    // blocos pequenos, com respiro entre eles, e cada chamada já tem retry
+    // próprio. Além disso existe um orçamento de tempo: a função da Vercel tem
+    // limite, então quando o tempo acaba os leads restantes são salvos SEM
+    // mensagem, pra nunca perder o lead — é só apertar "Gerar" na tela depois.
     let tokensIn = 0;
     let tokensOut = 0;
     let costOpenai = 0;
-    if (process.env.OPENAI_API_KEY && toSave.length > 0) {
-      const results = await Promise.allSettled(
-        toSave.map((lead) => generateLeadMessage({ lead, niche, apiKey: process.env.OPENAI_API_KEY }))
-      );
-      results.forEach((r, i) => {
-        if (r.status === 'fulfilled') {
-          const { message, subject, usage } = r.value;
-          if (toSave[i].channel === 'email') {
-            toSave[i].message_email = message;
-            if (subject) toSave[i].email_subject = subject;
+    const apiKey = aiApiKey();
+    if (apiKey && toSave.length > 0) {
+      const LOTE = 3;
+      const PAUSA_MS = 1500;
+      const ORCAMENTO_MS = 45000;
+      const inicio = Date.now();
+
+      for (let ini = 0; ini < toSave.length; ini += LOTE) {
+        if (Date.now() - inicio > ORCAMENTO_MS) break;
+        const bloco = toSave.slice(ini, ini + LOTE);
+        const results = await Promise.allSettled(
+          bloco.map((lead) => generateLeadMessage({ lead, niche, apiKey }))
+        );
+        results.forEach((r, i) => {
+          if (r.status !== 'fulfilled') return;
+          const alvo = toSave[ini + i];
+          const { message, subject, usage, model } = r.value;
+          if (alvo.channel === 'email') {
+            alvo.message_email = message;
+            if (subject) alvo.email_subject = subject;
           } else {
-            toSave[i].message_wa = message;
+            alvo.message_wa = message;
           }
-          toSave[i].message_model = 'gpt-4o-mini';
+          alvo.message_model = model || AI_MODEL;
           if (usage) {
             tokensIn += Number(usage.prompt_tokens || 0);
             tokensOut += Number(usage.completion_tokens || 0);
-            costOpenai += openaiCallCostUsd(usage);
+            costOpenai += aiCallCostUsd(usage);
           }
+          // se falhar, o lead segue sem mensagem pronta — não é motivo pra descartar o lead
+        });
+        if (ini + LOTE < toSave.length) {
+          await new Promise((r) => setTimeout(r, PAUSA_MS));
         }
-        // se falhar, o lead segue sem mensagem pronta — não é motivo pra descartar o lead
-      });
+      }
     }
 
     let saved = 0;
