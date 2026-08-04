@@ -12,6 +12,11 @@ import { aiCallCostUsd } from '../../lib/pricing';
 // registra o custo real da rodada (Apify via usageTotalUsd + OpenAI calculado
 // pelos tokens de cada chamada) em prospeccao_runs, pra alimentar o dashboard
 // de custos.
+//
+// 04/08/2026: a IA passou a devolver DUAS mensagens. A primeira (abertura, que
+// continua vindo no campo "message") vai pra message_wa/message_email como
+// antes. A segunda, com o link do protótipo, vai pra message_demo. Nicho sem
+// protótipo cadastrado devolve demo = null e a coluna fica vazia.
 export const config = {
   api: { bodyParser: true },
 };
@@ -73,6 +78,7 @@ export default async function handler(req, res) {
       }
 
       qualified += 1;
+
       toSave.push({
         run_id: run?.id || null,
         place_id: item.placeId,
@@ -107,6 +113,7 @@ export default async function handler(req, res) {
     let tokensOut = 0;
     let costOpenai = 0;
     const apiKey = aiApiKey();
+
     if (apiKey && toSave.length > 0) {
       const LOTE = 3;
       const PAUSA_MS = 1500;
@@ -115,21 +122,30 @@ export default async function handler(req, res) {
 
       for (let ini = 0; ini < toSave.length; ini += LOTE) {
         if (Date.now() - inicio > ORCAMENTO_MS) break;
+
         const bloco = toSave.slice(ini, ini + LOTE);
         const results = await Promise.allSettled(
           bloco.map((lead) => generateLeadMessage({ lead, niche, apiKey }))
         );
+
         results.forEach((r, i) => {
           if (r.status !== 'fulfilled') return;
           const alvo = toSave[ini + i];
-          const { message, subject, usage, model } = r.value;
+          const { message, demo, subject, usage, model } = r.value;
+
           if (alvo.channel === 'email') {
             alvo.message_email = message;
             if (subject) alvo.email_subject = subject;
           } else {
             alvo.message_wa = message;
           }
+
+          // Segunda mensagem, a do protótipo. Vem null quando o nicho não tem
+          // demo cadastrado, e nesse caso a coluna simplesmente não é tocada.
+          if (demo) alvo.message_demo = demo;
+
           alvo.message_model = model || AI_MODEL;
+
           if (usage) {
             tokensIn += Number(usage.prompt_tokens || 0);
             tokensOut += Number(usage.completion_tokens || 0);
@@ -137,6 +153,7 @@ export default async function handler(req, res) {
           }
           // se falhar, o lead segue sem mensagem pronta — não é motivo pra descartar o lead
         });
+
         if (ini + LOTE < toSave.length) {
           await new Promise((r) => setTimeout(r, PAUSA_MS));
         }
