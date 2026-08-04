@@ -24,6 +24,7 @@ export default async function handler(req, res) {
 
   try {
     const db = supabaseAdmin();
+
     const { data: lead, error: fetchErr } = await db.from('prospeccao_leads').select('*').eq('id', id).single();
     if (fetchErr || !lead) return apiError(res, 404, 'Lead não encontrado.');
 
@@ -40,9 +41,21 @@ export default async function handler(req, res) {
       return apiError(res, 502, genErr.message);
     }
 
+    // message_demo é a segunda mensagem, a do protótipo. Vem null quando o
+    // nicho não tem demo cadastrado, e nesse caso a coluna é limpa de
+    // propósito: gerar de novo substitui o par inteiro, não deixa metade velha.
     const updatePayload = lead.channel === 'email'
-      ? { message_email: generated.message, email_subject: generated.subject || lead.email_subject, message_model: generated.model || AI_MODEL }
-      : { message_wa: generated.message, message_model: generated.model || AI_MODEL };
+      ? {
+        message_email: generated.message,
+        email_subject: generated.subject || lead.email_subject,
+        message_demo: generated.demo,
+        message_model: generated.model || AI_MODEL,
+      }
+      : {
+        message_wa: generated.message,
+        message_demo: generated.demo,
+        message_model: generated.model || AI_MODEL,
+      };
 
     const { data: updated, error: updateErr } = await db
       .from('prospeccao_leads')
