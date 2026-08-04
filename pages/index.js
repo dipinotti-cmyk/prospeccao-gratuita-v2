@@ -8,7 +8,11 @@ import { STATUSES, statusLabel, statusColor, formatValor, parseValor, computeSta
 // dashboard com funil/cidades/canal/custo. Melhorias da v2 mantidas: oferta
 // configurável (site/automação/completo), desempenho por nicho com custo real,
 // nichos 100% editáveis na aba própria.
-
+//
+// 04/08/2026: cada lead passou a ter DUAS mensagens. A primeira é a abertura,
+// que ataca a dor. A segunda leva o link do protótipo e vai logo em seguida,
+// no mesmo fluxo que já era feito na mão. Os dois textos aparecem no card, têm
+// botão de copiar próprio e são editáveis no mesmo modal.
 const LIMITE_DIARIO = 15;
 
 const TABS = [
@@ -32,11 +36,9 @@ export default function Dashboard() {
   const [tab, setTab] = useState('nova');
   const [enviarComo, setEnviarComo] = useState('pessoal');
   const [lastUpdate, setLastUpdate] = useState(null);
-
   const [editingLead, setEditingLead] = useState(null);
   const [notesLead, setNotesLead] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
-
   const loadingRef = useRef(false);
 
   async function loadAll(silent) {
@@ -127,7 +129,7 @@ export default function Dashboard() {
       const json = await resp.json();
       if (!resp.ok) throw new Error(json.error || 'Falha ao gerar mensagem.');
       setLeads((cur) => cur.map((l) => (l.id === id ? json.lead : l)));
-      flash('Mensagem gerada.');
+      flash('Mensagens geradas.');
     } catch (err) {
       setInfo(null);
       setError(err.message);
@@ -139,12 +141,21 @@ export default function Dashboard() {
     setTimeout(() => setInfo(null), 3000);
   }
 
+  // Primeira mensagem: a abertura. É ela que abre a conversa.
   function copyMessage(lead) {
     const text = lead.channel === 'email'
       ? `${lead.email_subject || ''}\n\n${lead.message_email || ''}`
       : lead.message_wa || '';
     navigator.clipboard?.writeText(text);
-    flash('Mensagem copiada.');
+    flash('Abertura copiada.');
+  }
+
+  // Segunda mensagem: a do protótipo. Vai logo depois da abertura, na mesma
+  // conversa. Só existe quando o nicho tem link de demonstração cadastrado.
+  function copyDemo(lead) {
+    if (!lead.message_demo) return;
+    navigator.clipboard?.writeText(lead.message_demo);
+    flash('Mensagem do protótipo copiada. Manda logo depois da abertura.');
   }
 
   function markSent(lead) {
@@ -161,11 +172,19 @@ export default function Dashboard() {
     if (!digits) { setError('Esse lead não tem WhatsApp cadastrado.'); return; }
     const text = encodeURIComponent(lead.message_wa || '');
     window.open(`https://wa.me/${digits}?text=${text}`, '_blank');
+    // O WhatsApp só aceita uma mensagem por link. Então a segunda já vai
+    // pro clipboard aqui, pronta pra colar assim que a primeira for enviada.
+    if (lead.message_demo) {
+      navigator.clipboard?.writeText(lead.message_demo);
+      flash('Abertura foi pro WhatsApp. A 2ª mensagem já está copiada, é só colar depois de enviar a 1ª.');
+    }
   }
 
   function openEmail(lead) {
     const subject = encodeURIComponent(lead.email_subject || '');
-    const body = encodeURIComponent(lead.message_email || '');
+    // No e-mail as duas partes cabem na mesma mensagem, então já vão juntas.
+    const corpo = [lead.message_email || '', lead.message_demo || ''].filter(Boolean).join('\n\n');
+    const body = encodeURIComponent(corpo);
     window.open(`mailto:${lead.email || ''}?subject=${subject}&body=${body}`, '_blank');
   }
 
@@ -215,6 +234,7 @@ export default function Dashboard() {
           ● Prospecção #{runningRun.id} ({runningRun.niche_slug} em {runningRun.city}) em execução há {runningMinutes} min. Os leads aparecem sozinhos quando terminar.
         </div>
       )}
+
       {!runningRun && lastDoneRun && (
         <p style={{ marginBottom: 14, fontSize: 13.5 }}>
           Última prospecção: #{lastDoneRun.id} · {lastDoneRun.niche_slug} em {lastDoneRun.city} —{' '}
@@ -266,7 +286,12 @@ export default function Dashboard() {
               emptyText={`Nenhum lead novo de ${tab === 'whatsapp' ? 'WhatsApp' : 'e-mail'} no momento. Rode uma Nova prospecção.`}
               renderActions={(lead) => (
                 <>
-                  <button className="btn secondary" onClick={() => copyMessage(lead)}>Copiar</button>
+                  <button className="btn secondary" onClick={() => copyMessage(lead)}>
+                    {lead.message_demo ? 'Copiar 1ª (abertura)' : 'Copiar'}
+                  </button>
+                  {lead.message_demo && (
+                    <button className="btn secondary" onClick={() => copyDemo(lead)}>Copiar 2ª (protótipo)</button>
+                  )}
                   {lead.channel === 'whatsapp' ? (
                     <button className="btn" style={{ background: 'var(--blue)', color: '#fff' }} onClick={() => openWhatsApp(lead)}>Abrir WhatsApp</button>
                   ) : (
@@ -310,11 +335,9 @@ export default function Dashboard() {
           )}
 
           {tab === 'dashboard' && <DashboardTab leads={leads} stats={stats} nicheStats={nicheStats} runs={runs} />}
-
           {tab === 'nichos' && (
             <NichosTab niches={niches} onChanged={(updated) => setNiches(updated)} />
           )}
-
           {tab === 'historico' && <HistoricoTab runs={runs} />}
         </>
       )}
@@ -357,59 +380,83 @@ export default function Dashboard() {
 }
 
 // ————— Cards de lead (modelo da v1: mensagem inteira + botões grandes) —————
-
 function LeadCardList({ leads, emptyText, renderActions }) {
   if (!leads.length) return <div className="empty-state">{emptyText}</div>;
+
+  const caixa = {
+    background: '#0F0F0F', border: '1px solid var(--border)', borderRadius: 10,
+    padding: 14, marginTop: 12, fontSize: 13.5, whiteSpace: 'pre-wrap', lineHeight: 1.5,
+  };
+  const etiqueta = {
+    fontSize: 11, letterSpacing: '.08em', textTransform: 'uppercase',
+    fontWeight: 700, color: 'var(--muted)', marginBottom: 8,
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {leads.map((lead) => (
-        <div className="panel" key={lead.id} style={{ marginBottom: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 16, fontWeight: 700 }}>{lead.name}</span>
-            <span className="badge" style={{ border: '1px solid var(--green)', color: 'var(--green)' }}>
-              {lead.channel === 'email' ? 'E-mail' : 'WhatsApp'}
-            </span>
-            {lead.site_tipo === 'social' && (
-              <span className="badge" style={{ border: '1px solid var(--yellow)', color: 'var(--yellow)' }}>só rede social</span>
-            )}
-            {lead.canal_envio && (
-              <span className="badge" style={{ border: '1px solid var(--border)', color: 'var(--muted)' }}>via {lead.canal_envio}</span>
-            )}
-            <span style={{ marginLeft: 'auto', color: statusColor(lead.status), fontWeight: 600, fontSize: 13 }}>
-              {statusLabel(lead.status)}
-            </span>
-          </div>
-          <p className="muted" style={{ marginTop: 6, fontSize: 13 }}>
-            {[lead.category, lead.city, lead.rating ? `nota ${lead.rating} (${lead.reviews_count || 0} avaliações)` : null, lead.whatsapp || lead.email]
-              .filter(Boolean).join(' · ')}
-          </p>
-          {(lead.channel === 'email' ? lead.message_email : lead.message_wa) ? (
-            <div style={{
-              background: '#0F0F0F', border: '1px solid var(--border)', borderRadius: 10,
-              padding: 14, marginTop: 12, fontSize: 13.5, whiteSpace: 'pre-wrap', lineHeight: 1.5,
-            }}>
-              {lead.channel === 'email' && lead.email_subject ? (
-                <div style={{ fontWeight: 700, marginBottom: 8 }}>{lead.email_subject}</div>
-              ) : null}
-              {lead.channel === 'email' ? lead.message_email : lead.message_wa}
+      {leads.map((lead) => {
+        const principal = lead.channel === 'email' ? lead.message_email : lead.message_wa;
+        const temDuas = Boolean(principal && lead.message_demo);
+
+        return (
+          <div className="panel" key={lead.id} style={{ marginBottom: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 16, fontWeight: 700 }}>{lead.name}</span>
+              <span className="badge" style={{ border: '1px solid var(--green)', color: 'var(--green)' }}>
+                {lead.channel === 'email' ? 'E-mail' : 'WhatsApp'}
+              </span>
+              {lead.site_tipo === 'social' && (
+                <span className="badge" style={{ border: '1px solid var(--yellow)', color: 'var(--yellow)' }}>só rede social</span>
+              )}
+              {lead.canal_envio && (
+                <span className="badge" style={{ border: '1px solid var(--border)', color: 'var(--muted)' }}>via {lead.canal_envio}</span>
+              )}
+              <span style={{ marginLeft: 'auto', color: statusColor(lead.status), fontWeight: 600, fontSize: 13 }}>
+                {statusLabel(lead.status)}
+              </span>
             </div>
-          ) : (
-            <p className="muted" style={{ marginTop: 12, fontSize: 13 }}>Sem mensagem ainda — use Regerar ou Editar.</p>
-          )}
-          {lead.notes && (
-            <p className="muted" style={{ marginTop: 8, fontSize: 12.5 }}>📝 {lead.notes}{lead.valor ? ` · Proposta: ${formatValor(lead.valor)}` : ''}</p>
-          )}
-          <div className="row-actions" style={{ marginTop: 12 }}>
-            {renderActions(lead)}
+
+            <p className="muted" style={{ marginTop: 6, fontSize: 13 }}>
+              {[lead.category, lead.city, lead.rating ? `nota ${lead.rating} (${lead.reviews_count || 0} avaliações)` : null, lead.whatsapp || lead.email]
+                .filter(Boolean).join(' · ')}
+            </p>
+
+            {principal ? (
+              <div style={caixa}>
+                {temDuas && <div style={etiqueta}>1ª mensagem · abertura</div>}
+                {lead.channel === 'email' && lead.email_subject ? (
+                  <div style={{ fontWeight: 700, marginBottom: 8 }}>{lead.email_subject}</div>
+                ) : null}
+                {principal}
+              </div>
+            ) : (
+              <p className="muted" style={{ marginTop: 12, fontSize: 13 }}>Sem mensagem ainda — use Regerar ou Editar.</p>
+            )}
+
+            {lead.message_demo && (
+              <div style={{ ...caixa, borderColor: 'rgba(59,130,246,0.35)' }}>
+                <div style={{ ...etiqueta, color: 'var(--blue)' }}>
+                  2ª mensagem · protótipo {lead.channel === 'whatsapp' ? '(mandar logo depois da 1ª)' : '(vai junto no mesmo e-mail)'}
+                </div>
+                {lead.message_demo}
+              </div>
+            )}
+
+            {lead.notes && (
+              <p className="muted" style={{ marginTop: 8, fontSize: 12.5 }}>📝 {lead.notes}{lead.valor ? ` · Proposta: ${formatValor(lead.valor)}` : ''}</p>
+            )}
+
+            <div className="row-actions" style={{ marginTop: 12 }}>
+              {renderActions(lead)}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
 // ————— Aba Nova prospecção —————
-
 function NovaProspeccao({ niches, onStarted, onError, onOpenAddModal }) {
   const [niche, setNiche] = useState('');
   const [city, setCity] = useState('');
@@ -439,6 +486,8 @@ function NovaProspeccao({ niches, onStarted, onError, onOpenAddModal }) {
     }
   }
 
+  const nichoAtual = niches.find((n) => n.slug === niche);
+
   return (
     <div className="panel">
       <form onSubmit={submit}>
@@ -454,6 +503,7 @@ function NovaProspeccao({ niches, onStarted, onError, onOpenAddModal }) {
             <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="São Paulo, SP" required />
           </div>
         </div>
+
         <div className="form-row" style={{ marginTop: 12 }}>
           <label>Oferta desta rodada</label>
           <select value={oferta} onChange={(e) => setOferta(e.target.value)}>
@@ -462,6 +512,13 @@ function NovaProspeccao({ niches, onStarted, onError, onOpenAddModal }) {
             <option value="completo">Pacote completo (site + automação)</option>
           </select>
         </div>
+
+        {nichoAtual && !nichoAtual.demo_url && (
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 4, color: 'var(--yellow)' }}>
+            Este nicho não tem link de protótipo cadastrado, então os leads vão sair só com a mensagem de abertura. Preencha o campo "Link do protótipo" na aba Nichos pra a 2ª mensagem passar a ser gerada.
+          </p>
+        )}
+
         <button
           type="submit"
           className="btn"
@@ -471,22 +528,24 @@ function NovaProspeccao({ niches, onStarted, onError, onOpenAddModal }) {
           {saving ? 'Disparando...' : 'Buscar (10 e-mail + 10 WhatsApp)'}
         </button>
       </form>
+
       <p className="muted" style={{ fontSize: 13, marginTop: 14, lineHeight: 1.6 }}>
         Fluxo: envio → <b style={{ color: 'var(--ink)' }}>Aguardando resposta</b> → Respondeu vira <b style={{ color: 'var(--ink)' }}>Negociação</b> (Fechou / Recusou proposta / Sem interesse). Análise na aba <b style={{ color: 'var(--ink)' }}>Dashboard</b>.
       </p>
+
       <button className="btn secondary" style={{ marginTop: 12 }} onClick={onOpenAddModal}>+ Cadastrar lead manualmente</button>
     </div>
   );
 }
 
 // ————— Aba Dashboard —————
-
 function DashboardTab({ leads, stats, nicheStats, runs }) {
   const enviadas = leads.filter((l) => l.sent_at || !['novo'].includes(l.status)).length;
   const responderam = leads.filter((l) => l.replied || ['negociacao', 'fechado'].includes(l.status)).length;
   const fecharam = stats.closedCount;
   const pctResponderam = enviadas > 0 ? Math.round((responderam / enviadas) * 100) : 0;
   const pctFecharam = responderam > 0 ? Math.round((fecharam / responderam) * 100) : 0;
+
   const emNegociacaoValor = leads
     .filter((l) => l.status === 'negociacao')
     .reduce((s, l) => s + parseValor(l.valor), 0);
@@ -648,16 +707,19 @@ function DashboardTab({ leads, stats, nicheStats, runs }) {
 }
 
 // ————— Aba Nichos —————
-
 const NICHE_FIELD_LABELS = [
   { key: 'label', label: 'Nome de exibição', placeholder: 'Ex: Manicure / Nail designer' },
   { key: 'gmaps_query', label: 'Busca no Google Maps', placeholder: 'manicure em {cidade}' },
+  { key: 'demo_url', label: 'Link do protótipo', placeholder: 'https://demo-odonto-eight.vercel.app' },
   { key: 'leitor', label: 'Quem lê primeiro', placeholder: 'Ex: a própria profissional, atende sozinha...' },
   { key: 'tom', label: 'Tom de voz', placeholder: 'Ex: informal, próximo, emoji ok' },
   { key: 'solucao', label: 'Solução / argumento', placeholder: 'Ex: portfólio visual + agendamento' },
   { key: 'elogio_sugestao', label: 'Elogio + sugestão', placeholder: 'Como elogiar antes de sugerir a melhoria' },
   { key: 'pedido_demo', label: 'Pedido de demo grátis', placeholder: 'Quando/como oferecer demonstração grátis' },
 ];
+
+// Campos que são input de uma linha; o resto vira textarea.
+const NICHE_INPUT_KEYS = ['label', 'gmaps_query', 'demo_url'];
 
 function NichosTab({ niches, onChanged }) {
   const [editingId, setEditingId] = useState(null);
@@ -701,7 +763,7 @@ function NichosTab({ niches, onChanged }) {
       <h2>Nichos</h2>
       {err && <div className="error-banner">{err}</div>}
       <p className="muted" style={{ marginBottom: 14, fontSize: 12.5 }}>
-        Cada nicho calibra o jeito que a IA escreve a mensagem: quem lê primeiro, tom de voz, o argumento certo, como elogiar antes de sugerir, e quando pedir demonstração grátis. Tudo editável.
+        Cada nicho calibra o jeito que a IA escreve a mensagem: quem lê primeiro, tom de voz, o argumento certo, como elogiar antes de sugerir, e quando pedir demonstração grátis. O <b>Link do protótipo</b> é o que faz a 2ª mensagem existir — sem ele, o lead sai só com a abertura. Tudo editável.
       </p>
 
       {editingId === 'new' ? (
@@ -720,7 +782,12 @@ function NichosTab({ niches, onChanged }) {
             ) : (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ fontWeight: 600 }}>{n.label}</div>
+                  <div style={{ fontWeight: 600 }}>
+                    {n.label}
+                    {!n.demo_url && (
+                      <span className="badge" style={{ border: '1px solid var(--yellow)', color: 'var(--yellow)', marginLeft: 8 }}>sem protótipo</span>
+                    )}
+                  </div>
                   <div className="muted" style={{ fontSize: 12 }}>{n.slug}{n.tom ? ` · ${n.tom.slice(0, 60)}${n.tom.length > 60 ? '…' : ''}` : ''}</div>
                 </div>
                 <div className="row-actions">
@@ -741,6 +808,7 @@ function NicheForm({ initial, onSave, onCancel, isNew }) {
     slug: initial.slug || '',
     label: initial.label || '',
     gmaps_query: initial.gmaps_query || '',
+    demo_url: initial.demo_url || '',
     leitor: initial.leitor || '',
     tom: initial.tom || '',
     solucao: initial.solucao || '',
@@ -771,8 +839,14 @@ function NicheForm({ initial, onSave, onCancel, isNew }) {
       {NICHE_FIELD_LABELS.map((f) => (
         <div className="form-row" key={f.key}>
           <label>{f.label}</label>
-          {f.key === 'label' || f.key === 'gmaps_query' ? (
-            <input value={form[f.key]} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder} required={f.key === 'label'} />
+          {NICHE_INPUT_KEYS.includes(f.key) ? (
+            <input
+              type={f.key === 'demo_url' ? 'url' : 'text'}
+              value={form[f.key]}
+              onChange={(e) => set(f.key, e.target.value)}
+              placeholder={f.placeholder}
+              required={f.key === 'label'}
+            />
           ) : (
             <textarea rows={2} value={form[f.key]} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder} />
           )}
@@ -787,7 +861,6 @@ function NicheForm({ initial, onSave, onCancel, isNew }) {
 }
 
 // ————— Aba Histórico —————
-
 function HistoricoTab({ runs }) {
   return (
     <div className="panel">
@@ -826,19 +899,19 @@ function HistoricoTab({ runs }) {
 }
 
 // ————— Modais —————
-
 function EditMessageModal({ lead, onClose, onSave }) {
   const isEmail = lead.channel === 'email';
   const [subject, setSubject] = useState(lead.email_subject || '');
   const [body, setBody] = useState((isEmail ? lead.message_email : lead.message_wa) || '');
+  const [demo, setDemo] = useState(lead.message_demo || '');
   const [saving, setSaving] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
     setSaving(true);
     const patch = isEmail
-      ? { email_subject: subject, message_email: body }
-      : { message_wa: body };
+      ? { email_subject: subject, message_email: body, message_demo: demo || null }
+      : { message_wa: body, message_demo: demo || null };
     await onSave(patch);
     setSaving(false);
   }
@@ -846,7 +919,7 @@ function EditMessageModal({ lead, onClose, onSave }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Editar mensagem — {lead.name}</h3>
+        <h3>Editar mensagens — {lead.name}</h3>
         <form onSubmit={submit}>
           {isEmail && (
             <div className="form-row">
@@ -855,18 +928,27 @@ function EditMessageModal({ lead, onClose, onSave }) {
             </div>
           )}
           <div className="form-row">
-            <label>{isEmail ? 'Corpo do e-mail' : 'Mensagem de WhatsApp'}</label>
+            <label>1ª mensagem · {isEmail ? 'corpo do e-mail' : 'abertura no WhatsApp'}</label>
             <textarea
-              rows={9}
+              rows={8}
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              placeholder={isEmail ? 'Escreva o corpo do e-mail...' : 'Escreva a mensagem de WhatsApp...'}
+              placeholder={isEmail ? 'Escreva o corpo do e-mail...' : 'Escreva a mensagem de abertura...'}
               autoFocus
+            />
+          </div>
+          <div className="form-row">
+            <label>2ª mensagem · protótipo (deixe vazio se não for mandar)</label>
+            <textarea
+              rows={6}
+              value={demo}
+              onChange={(e) => setDemo(e.target.value)}
+              placeholder="Ah, e pra você não precisar imaginar, olha esse protótipo que eu montei: https://..."
             />
           </div>
           <div className="modal-actions">
             <button type="button" className="btn secondary" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn" disabled={saving}>{saving ? 'Salvando...' : 'Salvar mensagem'}</button>
+            <button type="submit" className="btn" disabled={saving}>{saving ? 'Salvando...' : 'Salvar mensagens'}</button>
           </div>
         </form>
       </div>
