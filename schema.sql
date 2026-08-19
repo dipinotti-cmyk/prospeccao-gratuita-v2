@@ -14,6 +14,17 @@ create table if not exists prospeccao_niches (
   label         text not null,
   gmaps_query   text not null,
   resumo        text,               -- contexto de tom/argumento pro prompt da OpenAI (add. 25/07/2026)
+  leitor          text,
+  tom             text,
+  solucao         text,
+  elogio_sugestao text,
+  pedido_demo     text,
+  -- Segunda mensagem: o link que vai depois da abertura (add. 19/08/2026).
+  demo_url        text,
+  demo_tipo       text,               -- 'cliente' (site real entregue) | 'modelo' (prototipo)
+  demo_quem       text,               -- de quem e o site, quando demo_tipo = 'cliente'
+  demo_olhar      text,               -- um ponto por linha, o que mandar reparar no link
+  demo_fechamento text,               -- pergunta que fecha a segunda mensagem
   created_at    timestamptz default now()
 );
 
@@ -58,6 +69,7 @@ create table if not exists prospeccao_leads (
   gmaps_url       text,
   channel         text,               -- 'whatsapp' | 'email'
   message_wa      text,
+  message_demo    text,               -- 2a mensagem, a do link (add. 19/08/2026)
   email_subject   text,
   message_email   text,
   followup_wa     text,
@@ -133,3 +145,24 @@ create trigger prospeccao_leads_set_updated_at
 alter table prospeccao_niches enable row level security;
 alter table prospeccao_runs enable row level security;
 alter table prospeccao_leads enable row level security;
+
+
+-- ---------------------------------------------------------------------------
+-- MIGRACAO 19/08/2026 — rode este bloco no SQL Editor do Supabase.
+--
+-- Por que: o painel ja tinha o campo "Link do prototipo" na tela de nichos, mas
+-- a coluna nunca existiu no banco e o PATCH da API descartava o valor. Resultado:
+-- o link sumia toda vez que era salvo, e a segunda mensagem nunca era gerada.
+-- Rodar duas vezes nao faz mal — tudo aqui e "if not exists".
+-- ---------------------------------------------------------------------------
+alter table prospeccao_niches add column if not exists leitor          text;
+alter table prospeccao_niches add column if not exists tom             text;
+alter table prospeccao_niches add column if not exists solucao         text;
+alter table prospeccao_niches add column if not exists elogio_sugestao text;
+alter table prospeccao_niches add column if not exists pedido_demo     text;
+alter table prospeccao_niches add column if not exists demo_url        text;
+alter table prospeccao_niches add column if not exists demo_tipo       text;
+alter table prospeccao_niches add column if not exists demo_quem       text;
+alter table prospeccao_niches add column if not exists demo_olhar      text;
+alter table prospeccao_niches add column if not exists demo_fechamento text;
+alter table prospeccao_leads  add column if not exists message_demo    text;

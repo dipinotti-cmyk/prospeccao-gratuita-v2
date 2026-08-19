@@ -708,18 +708,52 @@ function DashboardTab({ leads, stats, nicheStats, runs }) {
 
 // ————— Aba Nichos —————
 const NICHE_FIELD_LABELS = [
-  { key: 'label', label: 'Nome de exibição', placeholder: 'Ex: Manicure / Nail designer' },
-  { key: 'gmaps_query', label: 'Busca no Google Maps', placeholder: 'manicure em {cidade}' },
-  { key: 'demo_url', label: 'Link do protótipo', placeholder: 'https://demo-odonto-eight.vercel.app' },
-  { key: 'leitor', label: 'Quem lê primeiro', placeholder: 'Ex: a própria profissional, atende sozinha...' },
-  { key: 'tom', label: 'Tom de voz', placeholder: 'Ex: informal, próximo, emoji ok' },
-  { key: 'solucao', label: 'Solução / argumento', placeholder: 'Ex: portfólio visual + agendamento' },
-  { key: 'elogio_sugestao', label: 'Elogio + sugestão', placeholder: 'Como elogiar antes de sugerir a melhoria' },
-  { key: 'pedido_demo', label: 'Pedido de demo grátis', placeholder: 'Quando/como oferecer demonstração grátis' },
+  { key: 'label', tipo: 'input', label: 'Nome de exibição', placeholder: 'Ex: Manicure / Nail designer' },
+  { key: 'gmaps_query', tipo: 'input', label: 'Busca no Google Maps', placeholder: 'manicure em {cidade}' },
+  {
+    key: 'demo_url',
+    tipo: 'url',
+    label: 'Link da 2ª mensagem',
+    placeholder: 'https://sindynutricionista.com.br',
+    ajuda: 'O site que você manda logo depois da abertura. Sem link aqui, o nicho gera só a mensagem de abertura.',
+  },
+  {
+    key: 'demo_tipo',
+    tipo: 'select',
+    label: 'Esse link é o quê?',
+    opcoes: [
+      { valor: 'modelo', texto: 'Um modelo/protótipo que eu montei' },
+      { valor: 'cliente', texto: 'Site de um cliente meu, no ar' },
+    ],
+    ajuda: 'Muda o texto inteiro da 2ª mensagem. Cliente real vira prova ("fiz o site de..."); modelo é apresentado como modelo. Chamar modelo de cliente derruba a venda na primeira pergunta.',
+  },
+  {
+    key: 'demo_quem',
+    tipo: 'input',
+    label: 'De quem é esse site',
+    placeholder: 'uma nutricionista em Florianópolis',
+    ajuda: 'Só usado quando o link é de cliente. Vira a frase "fiz o site de ___". Escreva sem o nome da pessoa, só quem é e onde.',
+  },
+  {
+    key: 'demo_olhar',
+    tipo: 'textarea',
+    label: 'O que mandar reparar no link',
+    placeholder: 'Um por linha. Ex:\no CRN aparece no topo e no rodapé\nos depoimentos ficam na página, não só no Google',
+    ajuda: 'Um por linha. É o que faz a pessoa abrir o link e olhar o lugar certo em vez de passar o olho.',
+  },
+  {
+    key: 'demo_fechamento',
+    tipo: 'input',
+    label: 'Pergunta que fecha a 2ª mensagem',
+    placeholder: 'Você atende só presencial ou também online?',
+    ajuda: 'Uma pergunta que ela responde em uma linha e que já te diz o escopo. Nada de "o que achou?".',
+  },
+  { key: 'leitor', tipo: 'textarea', label: 'Quem lê primeiro', placeholder: 'Ex: a própria profissional, atende sozinha...' },
+  { key: 'tom', tipo: 'textarea', label: 'Tom de voz', placeholder: 'Ex: informal, próximo, emoji ok' },
+  { key: 'solucao', tipo: 'textarea', label: 'Solução / argumento', placeholder: 'Ex: portfólio visual + agendamento' },
+  { key: 'elogio_sugestao', tipo: 'textarea', label: 'Elogio + sugestão', placeholder: 'Como elogiar antes de sugerir a melhoria' },
+  { key: 'pedido_demo', tipo: 'textarea', label: 'Pedido de demo grátis', placeholder: 'Quando/como oferecer demonstração grátis' },
 ];
-
-// Campos que são input de uma linha; o resto vira textarea.
-const NICHE_INPUT_KEYS = ['label', 'gmaps_query', 'demo_url'];
 
 function NichosTab({ niches, onChanged }) {
   const [editingId, setEditingId] = useState(null);
@@ -809,6 +843,10 @@ function NicheForm({ initial, onSave, onCancel, isNew }) {
     label: initial.label || '',
     gmaps_query: initial.gmaps_query || '',
     demo_url: initial.demo_url || '',
+    demo_tipo: initial.demo_tipo || 'modelo',
+    demo_quem: initial.demo_quem || '',
+    demo_olhar: initial.demo_olhar || '',
+    demo_fechamento: initial.demo_fechamento || '',
     leitor: initial.leitor || '',
     tom: initial.tom || '',
     solucao: initial.solucao || '',
@@ -839,16 +877,23 @@ function NicheForm({ initial, onSave, onCancel, isNew }) {
       {NICHE_FIELD_LABELS.map((f) => (
         <div className="form-row" key={f.key}>
           <label>{f.label}</label>
-          {NICHE_INPUT_KEYS.includes(f.key) ? (
+          {f.ajuda && <small className="muted" style={{ display: 'block', marginBottom: 4 }}>{f.ajuda}</small>}
+          {f.tipo === 'select' ? (
+            <select value={form[f.key]} onChange={(e) => set(f.key, e.target.value)}>
+              {f.opcoes.map((o) => (
+                <option key={o.valor} value={o.valor}>{o.texto}</option>
+              ))}
+            </select>
+          ) : f.tipo === 'textarea' ? (
+            <textarea rows={f.key === 'demo_olhar' ? 3 : 2} value={form[f.key]} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder} />
+          ) : (
             <input
-              type={f.key === 'demo_url' ? 'url' : 'text'}
+              type={f.tipo === 'url' ? 'url' : 'text'}
               value={form[f.key]}
               onChange={(e) => set(f.key, e.target.value)}
               placeholder={f.placeholder}
               required={f.key === 'label'}
             />
-          ) : (
-            <textarea rows={2} value={form[f.key]} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder} />
           )}
         </div>
       ))}

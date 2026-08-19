@@ -32,6 +32,11 @@ export default async function handler(req, res) {
         elogio_sugestao: body.elogio_sugestao || null,
         pedido_demo: body.pedido_demo || null,
         resumo: body.resumo || null,
+        demo_url: body.demo_url || null,
+        demo_tipo: body.demo_tipo || null,
+        demo_quem: body.demo_quem || null,
+        demo_olhar: body.demo_olhar || null,
+        demo_fechamento: body.demo_fechamento || null,
       };
 
       const { data, error } = await db.from('prospeccao_niches').insert(insertPayload).select().single();
