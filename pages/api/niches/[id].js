@@ -12,7 +12,10 @@ export default async function handler(req, res) {
     if (req.method === 'PATCH') {
       const body = req.body || {};
       const patch = {};
-      const allowed = ['label', 'gmaps_query', 'leitor', 'tom', 'solucao', 'elogio_sugestao', 'pedido_demo', 'resumo'];
+      // demo_url e companhia entraram em 19/08/2026: o campo 'Link do prototipo'
+      // ja existia na tela, mas nao estava nesta lista, entao o PATCH descartava
+      // o valor em silencio e o link nunca chegava no banco.
+      const allowed = ['label', 'gmaps_query', 'leitor', 'tom', 'solucao', 'elogio_sugestao', 'pedido_demo', 'resumo', 'demo_url', 'demo_tipo', 'demo_quem', 'demo_olhar', 'demo_fechamento'];
       for (const key of allowed) {
         if (key in body) patch[key] = body[key];
       }
