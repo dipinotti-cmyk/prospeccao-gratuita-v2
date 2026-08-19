@@ -395,6 +395,19 @@ export default function Dashboard() {
 }
 
 // ————— Cards de lead (modelo da v1: mensagem inteira + botões grandes) —————
+// Nome curto do que está no campo website do Google. O lead quase nunca tem
+// site de verdade ali: é Instagram, Linktree ou Doctoralia. Saber QUAL muda o
+// texto da resposta.
+function rotuloLink(url) {
+  const u = String(url).toLowerCase();
+  if (u.includes('instagram')) return 'Instagram';
+  if (u.includes('linktr')) return 'Linktree';
+  if (u.includes('doctoralia')) return 'Doctoralia';
+  if (u.includes('facebook')) return 'Facebook';
+  if (u.includes('ifood')) return 'iFood';
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+}
+
 function LeadCardList({ leads, emptyText, renderActions }) {
   if (!leads.length) return <div className="empty-state">{emptyText}</div>;
 
@@ -434,6 +447,20 @@ function LeadCardList({ leads, emptyText, renderActions }) {
             <p className="muted" style={{ marginTop: 6, fontSize: 13 }}>
               {[lead.category, lead.city, lead.rating ? `nota ${lead.rating} (${lead.reviews_count || 0} avaliações)` : null, lead.whatsapp || lead.email]
                 .filter(Boolean).join(' · ')}
+            </p>
+
+            {/* O que o perfil do Google dele aponta. É o único fato sobre "site"
+                que dá pra afirmar sem checar — e é o que decide qual variante da
+                resposta "já tenho site" usar. Sem isso na tela, o Diogo chuta. */}
+            <p className="muted" style={{ marginTop: 2, fontSize: 13 }}>
+              Link no perfil do Google:{' '}
+              {lead.website ? (
+                <a href={lead.website} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--green)' }}>
+                  {rotuloLink(lead.website)}
+                </a>
+              ) : (
+                <b style={{ color: 'var(--ink)' }}>nenhum</b>
+              )}
             </p>
 
             {principal ? (
@@ -733,8 +760,17 @@ function DashboardTab({ leads, stats, nicheStats, runs }) {
 const RESPOSTAS = [
   {
     objecao: 'Já tenho site',
-    porque: 'A mais comum. Não discuta: o site existir não quer dizer que ele traga paciente. Ofereça olhar, não afirme que está ruim.',
-    texto: 'Ah, que bom! Me manda o link que eu dou uma olhada.\n\nPergunto porque cheguei em você pelo Google Maps, e no seu perfil de lá o link vai pro Instagram, não pro site. Quem te procura pelo mapa acaba não chegando nele.\n\nSe quiser, eu vejo também em que posição ele aparece quando alguém busca o seu serviço na sua cidade, e te falo o que dá pra ajustar. Sem custo e sem compromisso.',
+    porque: 'A mais comum. Não discuta: o site existir não quer dizer que ele traga paciente. Ofereça olhar, nunca afirme que está ruim. ATENÇÃO: escolha a variante pelo campo "Link no perfil" que aparece no card do lead — dizer "vai pro Instagram" pra quem não tem link nenhum é errar feio na frente do cliente.',
+    variantes: [
+      {
+        quando: 'O card do lead mostra Instagram, Facebook, Linktree ou Doctoralia',
+        texto: 'Ah, que bom! Me manda o link que eu dou uma olhada.\n\nPergunto porque cheguei em você pelo Google Maps, e no seu perfil de lá o link vai pro Instagram, não pro site. Quem te procura pelo mapa acaba não chegando nele.\n\nSe quiser, eu vejo também em que posição ele aparece quando alguém busca o seu serviço na sua cidade, e te falo o que dá pra ajustar. Sem custo e sem compromisso.',
+      },
+      {
+        quando: 'O card do lead não mostra link nenhum (o caso mais comum)',
+        texto: 'Ah, que bom! Me manda o link que eu dou uma olhada.\n\nPergunto porque cheguei em você pelo Google Maps e no seu perfil de lá não tem o endereço do site cadastrado. Quem te procura pelo mapa não encontra ele.\n\nIsso é rápido de resolver, e é de graça. Se quiser eu vejo também em que posição seu site aparece quando alguém busca o seu serviço na sua cidade, e te falo o que dá pra ajustar. Sem compromisso.',
+      },
+    ],
   },
   {
     objecao: 'Quanto custa?',
@@ -782,14 +818,32 @@ function RespostasTab() {
                 <strong>“{r.objecao}”</strong>
                 <div className="muted" style={{ fontSize: 13, marginTop: 2, maxWidth: '60ch' }}>{r.porque}</div>
               </div>
-              <button className="btn secondary" onClick={() => copiar(r, i)}>
-                {copiada === i ? 'Copiado ✓' : 'Copiar resposta'}
-              </button>
+              {!r.variantes && (
+                <button className="btn secondary" onClick={() => copiar(r, i)}>
+                  {copiada === i ? 'Copiado ✓' : 'Copiar resposta'}
+                </button>
+              )}
             </div>
-            <pre style={{
-              whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.55,
-              background: 'var(--bg)', borderRadius: 8, padding: 12, marginTop: 12, marginBottom: 0,
-            }}>{r.texto}</pre>
+            {(r.variantes || [{ quando: null, texto: r.texto }]).map((v, k) => (
+              <div key={k} style={{ marginTop: 12 }}>
+                {v.quando && (
+                  <div className="muted" style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                    ▸ {v.quando}
+                    <button
+                      className="btn secondary"
+                      style={{ marginLeft: 8, padding: '2px 8px', fontSize: 11 }}
+                      onClick={() => copiar(v, r.objecao + k)}
+                    >
+                      {copiada === r.objecao + k ? 'Copiado ✓' : 'Copiar'}
+                    </button>
+                  </div>
+                )}
+                <pre style={{
+                  whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.55,
+                  background: 'var(--bg)', borderRadius: 8, padding: 12, margin: 0,
+                }}>{v.texto}</pre>
+              </div>
+            ))}
           </div>
         ))}
       </div>
