@@ -163,7 +163,9 @@ export default function Dashboard() {
       status: 'enviado',
       sent_at: new Date().toISOString(),
       canal_envio: enviarComo,
-      followup_due_at: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+      // Sem prazo de follow-up: prospeccao fria nao tem segunda cobranca.
+      // Passados 3 dias sem resposta o cron move o lead pra "sem interesse".
+      followup_due_at: null,
     });
   }
 

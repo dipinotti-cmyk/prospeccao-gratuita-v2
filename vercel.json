@@ -1,8 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/cron-followups",
-      "schedule": "0 12 * * *"
+      "path": "/api/cron-encerrar-frios",
+      "schedule": "0 11 * * *"
     }
   ],
   "functions": {
