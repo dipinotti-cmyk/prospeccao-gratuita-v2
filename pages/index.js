@@ -22,6 +22,7 @@ const TABS = [
   { key: 'aguardando', label: 'Aguardando resposta' },
   { key: 'negociacao', label: 'Negociação' },
   { key: 'dashboard', label: 'Dashboard' },
+  { key: 'respostas', label: 'Respostas prontas' },
   { key: 'nichos', label: 'Nichos' },
   { key: 'historico', label: 'Histórico' },
 ];
@@ -348,6 +349,7 @@ export default function Dashboard() {
           )}
 
           {tab === 'dashboard' && <DashboardTab leads={leads} stats={stats} nicheStats={nicheStats} runs={runs} />}
+          {tab === 'respostas' && <RespostasTab />}
           {tab === 'nichos' && (
             <NichosTab niches={niches} onChanged={(updated) => setNiches(updated)} />
           )}
@@ -716,6 +718,82 @@ function DashboardTab({ leads, stats, nicheStats, runs }) {
         </p>
       </div>
     </>
+  );
+}
+
+// ————— Aba Respostas prontas —————
+//
+// Prospeccao fria nao tem follow-up, mas tem RESPOSTA a objecao — e a objecao
+// vem sempre nas mesmas 5 formas. Ter o texto pronto e a diferenca entre
+// responder em 40 segundos e deixar a conversa esfriar.
+//
+// Regra que vale pra todas: nao afirmar o que nao da pra verificar. Ofereca
+// checar. Um diagnostico gratuito e concreto abre mais porta do que um palpite
+// que pode estar errado — e se estiver errado, queima a conversa inteira.
+const RESPOSTAS = [
+  {
+    objecao: 'Já tenho site',
+    porque: 'A mais comum. Não discuta: o site existir não quer dizer que ele traga paciente. Ofereça olhar, não afirme que está ruim.',
+    texto: 'Ah, que bom! Me manda o link que eu dou uma olhada.\n\nPergunto porque cheguei em você pelo Google Maps, e no seu perfil de lá o link vai pro Instagram, não pro site. Quem te procura pelo mapa acaba não chegando nele.\n\nSe quiser, eu vejo também em que posição ele aparece quando alguém busca o seu serviço na sua cidade, e te falo o que dá pra ajustar. Sem custo e sem compromisso.',
+  },
+  {
+    objecao: 'Quanto custa?',
+    porque: 'Responder com faixa mostra que existe preço e filtra quem não tem orçamento. Fugir da pergunta mata a conversa.',
+    texto: 'Depende do tamanho, mas pra te dar um norte: site de uma página fica entre R$ 800 e R$ 1.200, e site completo com serviços, depoimentos e área de contato fica entre R$ 1.200 e R$ 1.800. Tudo com domínio, hospedagem do primeiro ano e o site no ar.\n\nPra fechar o valor eu preciso saber só duas coisas: quantos serviços você quer mostrar e se já tem as fotos. Me responde essas duas que eu te mando o valor exato.',
+  },
+  {
+    objecao: 'Vou pensar / depois eu vejo',
+    porque: 'Não insista e não marque follow-up. Deixe uma porta aberta que não exige resposta e encerre com elegância.',
+    texto: 'Tranquilo, sem pressa nenhuma.\n\nDeixo o link do modelo salvo aqui pra você olhar com calma quando der. Se em algum momento fizer sentido, é só me chamar nesse mesmo número que eu retomo de onde paramos.\n\nBom trabalho por aí!',
+  },
+  {
+    objecao: 'Uso só o Instagram',
+    porque: 'Não ataque o Instagram — ele funciona. Mostre o que ele não faz: aparecer pra quem busca no Google e não segue você.',
+    texto: 'Faz sentido, o Instagram funciona bem pra quem já te conhece.\n\nO site resolve o outro lado: quem digita o seu serviço no Google e ainda não te segue. Essa pessoa não chega no seu perfil, ela chega em quem tem site.\n\nOs dois juntos funcionam melhor que qualquer um sozinho — o site inclusive puxa pro seu Instagram. Quer ver como fica?',
+  },
+  {
+    objecao: 'Já tentei com outro e não deu certo',
+    porque: 'Ouro. Quem já tentou tem orçamento e tem dor. Descubra o que deu errado antes de vender qualquer coisa.',
+    texto: 'Entendo, e infelizmente é comum.\n\nMe conta o que aconteceu: não ficou pronto, ficou pronto e não trouxe cliente, ou você não conseguiu mais falar com a pessoa depois?\n\nPergunto porque cada um desses tem uma solução diferente, e não faz sentido eu te oferecer nada antes de saber qual foi.',
+  },
+];
+
+function RespostasTab() {
+  const [copiada, setCopiada] = useState(null);
+
+  function copiar(r, i) {
+    navigator.clipboard?.writeText(r.texto);
+    setCopiada(i);
+    setTimeout(() => setCopiada((atual) => (atual === i ? null : atual)), 2000);
+  }
+
+  return (
+    <div className="panel">
+      <h2>Respostas prontas</h2>
+      <p className="muted" style={{ marginTop: 4 }}>
+        Prospecção fria não tem follow-up, mas tem resposta a objeção. Copie, ajuste o nome e responda
+        na hora. Nenhuma delas afirma algo que você não checou: todas oferecem olhar antes de opinar.
+      </p>
+      <div style={{ display: 'grid', gap: 14, marginTop: 18 }}>
+        {RESPOSTAS.map((r, i) => (
+          <div key={r.objecao} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div>
+                <strong>“{r.objecao}”</strong>
+                <div className="muted" style={{ fontSize: 13, marginTop: 2, maxWidth: '60ch' }}>{r.porque}</div>
+              </div>
+              <button className="btn secondary" onClick={() => copiar(r, i)}>
+                {copiada === i ? 'Copiado ✓' : 'Copiar resposta'}
+              </button>
+            </div>
+            <pre style={{
+              whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 14, lineHeight: 1.55,
+              background: 'var(--bg)', borderRadius: 8, padding: 12, marginTop: 12, marginBottom: 0,
+            }}>{r.texto}</pre>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
