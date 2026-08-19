@@ -58,7 +58,23 @@ export default async function handler(req, res) {
     let emailCount = 0;
     const toSave = [];
 
+    // Quem ja passou pela prospeccao alguma vez nunca mais volta. O ledger
+    // prospeccao_contatados guarda isso pra sempre, entao apagar lead nao faz a
+    // empresa reaparecer numa busca futura. Sem isso, repetir nicho + cidade
+    // devolve as MESMAS empresas do Google e a rodada inteira vira repeteco.
+    const idsAchados = items.map((it) => it.placeId).filter(Boolean);
+    const jaContatados = new Set();
+    for (let i = 0; i < idsAchados.length; i += 200) {
+      const { data: conhecidos } = await db
+        .from('prospeccao_contatados')
+        .select('place_id')
+        .in('place_id', idsAchados.slice(i, i + 200));
+      (conhecidos || []).forEach((r) => jaContatados.add(r.place_id));
+    }
+    let repetidos = 0;
+
     for (const item of items) {
+      if (item.placeId && jaContatados.has(item.placeId)) { repetidos += 1; continue; }
       const hasOwnSite = item.website && !/instagram\.com|facebook\.com|linktr\.ee|ifood|doctoralia/i.test(item.website);
       if (hasOwnSite) continue;
 
@@ -177,6 +193,16 @@ export default async function handler(req, res) {
       else if (data && data.length > 0) saved += 1;
       else duplicados += 1;
     }
+
+    // O ledger e escrito sempre, mesmo quando o lead nao entrou: o objetivo e
+    // nunca mais mostrar essa empresa numa busca, independente do que aconteca
+    // com a linha em prospeccao_leads.
+    if (toSave.length > 0) {
+      await db.from('prospeccao_contatados').upsert(
+        toSave.map((l) => ({ place_id: l.place_id, name: l.name, city: l.city, niche_slug: l.niche_slug })),
+        { onConflict: 'place_id', ignoreDuplicates: true }
+      );
+    }
     if (falhas > 0) console.error(`[apify-webhook] ${falhas} lead(s) falharam ao salvar na run ${run?.id}`);
 
     // Custo real da Apify: só fica disponível depois que a run termina —
@@ -202,7 +228,7 @@ export default async function handler(req, res) {
           found: items.length,
           qualified,
           saved,
-          duplicados,
+          duplicados: duplicados + repetidos,
           cost_apify: costApify,
           cost_openai: costOpenai,
           tokens_in: tokensIn,
@@ -211,7 +237,7 @@ export default async function handler(req, res) {
         .eq('id', run.id);
     }
 
-    return res.status(200).json({ found: items.length, qualified, saved, duplicados, cost_apify: costApify, cost_openai: costOpenai });
+    return res.status(200).json({ found: items.length, qualified, saved, duplicados: duplicados + repetidos, cost_apify: costApify, cost_openai: costOpenai });
   } catch (err) {
     return apiError(res, 500, err.message || 'Erro inesperado no webhook.');
   }

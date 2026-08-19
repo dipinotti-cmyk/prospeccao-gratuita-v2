@@ -168,3 +168,21 @@ alter table prospeccao_niches add column if not exists demo_olhar      text;
 alter table prospeccao_niches add column if not exists demo_fechamento text;
 alter table prospeccao_leads  add column if not exists message_demo    text;
 alter table prospeccao_runs   add column if not exists duplicados      int default 0;
+
+-- ---------------------------------------------------------------------------
+-- MIGRACAO 19/08/2026 (2) — ledger de contatados.
+-- Quem ja entrou na prospeccao uma vez nunca mais aparece numa busca, mesmo
+-- que a linha em prospeccao_leads seja apagada depois.
+-- ---------------------------------------------------------------------------
+create table if not exists prospeccao_contatados (
+  place_id    text primary key,
+  name        text,
+  city        text,
+  niche_slug  text,
+  first_seen  timestamptz default now()
+);
+alter table prospeccao_contatados enable row level security;
+
+insert into prospeccao_contatados (place_id, name, city, niche_slug, first_seen)
+select place_id, name, city, niche_slug, created_at from prospeccao_leads where place_id is not null
+on conflict (place_id) do nothing;

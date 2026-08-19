@@ -59,7 +59,11 @@ export default async function handler(req, res) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           searchStringsArray: [searchString],
-          maxCrawledPlacesPerSearch: 30,
+          // 50, nao 30: os ja contatados sao descartados antes de qualificar,
+          // entao a busca precisa de folga pra ainda sobrar lead novo. Cidade
+          // ja varrida devolve pouco de qualquer jeito — a tela avisa quando
+          // nao entrou ninguem.
+          maxCrawledPlacesPerSearch: 50,
           language: 'pt-BR',
           includeWebResults: false,
         }),
