@@ -238,8 +238,19 @@ export default function Dashboard() {
       {!runningRun && lastDoneRun && (
         <p style={{ marginBottom: 14, fontSize: 13.5 }}>
           Última prospecção: #{lastDoneRun.id} · {lastDoneRun.niche_slug} em {lastDoneRun.city} —{' '}
-          <span style={{ color: 'var(--green)', fontWeight: 600 }}>{lastDoneRun.saved} leads novos</span>
+          <span style={{ color: lastDoneRun.saved > 0 ? 'var(--green)' : 'var(--muted)', fontWeight: 600 }}>
+            {lastDoneRun.saved} leads novos
+          </span>
+          {lastDoneRun.duplicados > 0 && (
+            <> · <span style={{ color: 'var(--amber, #d98a00)', fontWeight: 600 }}>{lastDoneRun.duplicados} já estavam na base</span></>
+          )}
           {' '}(de {lastDoneRun.found} achados).
+          {lastDoneRun.saved === 0 && lastDoneRun.duplicados > 0 && (
+            <div style={{ marginTop: 4 }}>
+              Essa busca não trouxe ninguém novo: o Google devolve as mesmas empresas para o mesmo nicho e cidade.
+              Troque a cidade ou o nicho antes de rodar de novo, senão você paga a Apify por lead repetido.
+            </div>
+          )}
         </p>
       )}
 

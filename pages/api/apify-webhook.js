@@ -160,11 +160,24 @@ export default async function handler(req, res) {
       }
     }
 
+    // ignoreDuplicates faz o Postgres pular a linha em silencio quando o
+    // place_id ja existe — sem erro. O contador antigo somava esse silencio
+    // como se fosse lead novo, entao repetir nicho+cidade mostrava "4 leads
+    // novos" quando nao tinha entrado nada. Com .select('id'), lead inserido
+    // devolve linha e lead pulado devolve vazio: da pra separar os tres casos.
     let saved = 0;
+    let duplicados = 0;
+    let falhas = 0;
     for (const leadData of toSave) {
-      const { error } = await db.from('prospeccao_leads').upsert(leadData, { onConflict: 'place_id', ignoreDuplicates: true });
-      if (!error) saved += 1;
+      const { data, error } = await db
+        .from('prospeccao_leads')
+        .upsert(leadData, { onConflict: 'place_id', ignoreDuplicates: true })
+        .select('id');
+      if (error) falhas += 1;
+      else if (data && data.length > 0) saved += 1;
+      else duplicados += 1;
     }
+    if (falhas > 0) console.error(`[apify-webhook] ${falhas} lead(s) falharam ao salvar na run ${run?.id}`);
 
     // Custo real da Apify: só fica disponível depois que a run termina —
     // por isso é buscado aqui (no fim), não em /api/run (no início).
@@ -189,6 +202,7 @@ export default async function handler(req, res) {
           found: items.length,
           qualified,
           saved,
+          duplicados,
           cost_apify: costApify,
           cost_openai: costOpenai,
           tokens_in: tokensIn,
@@ -197,7 +211,7 @@ export default async function handler(req, res) {
         .eq('id', run.id);
     }
 
-    return res.status(200).json({ found: items.length, qualified, saved, cost_apify: costApify, cost_openai: costOpenai });
+    return res.status(200).json({ found: items.length, qualified, saved, duplicados, cost_apify: costApify, cost_openai: costOpenai });
   } catch (err) {
     return apiError(res, 500, err.message || 'Erro inesperado no webhook.');
   }

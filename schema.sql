@@ -39,6 +39,7 @@ create table if not exists prospeccao_runs (
   found         int default 0,
   qualified     int default 0,
   saved         int default 0,
+  duplicados    int default 0,   -- leads que o Google reachou mas ja estavam na base (add. 19/08/2026)
   cost_apify    numeric default 0,
   cost_openai   numeric default 0,
   tokens_in     int default 0,
@@ -166,3 +167,4 @@ alter table prospeccao_niches add column if not exists demo_quem       text;
 alter table prospeccao_niches add column if not exists demo_olhar      text;
 alter table prospeccao_niches add column if not exists demo_fechamento text;
 alter table prospeccao_leads  add column if not exists message_demo    text;
+alter table prospeccao_runs   add column if not exists duplicados      int default 0;
