@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     return apiError(
       res,
       501,
-      'Chave da Gemini não configurada (GEMINI_API_KEY, ou o valor antigo de OPENAI_API_KEY). Escreva a mensagem manualmente por enquanto — assim que a chave for adicionada nas variáveis de ambiente da Vercel, a geração automática volta a funcionar.'
+      'GEMINI_API_KEY não está configurada nas variáveis de ambiente da Vercel. Escreva a mensagem manualmente por enquanto — assim que a chave for adicionada e o projeto for redeployado, a geração automática volta a funcionar.'
     );
   }
 

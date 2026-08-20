@@ -6,7 +6,7 @@ import { aiCallCostUsd } from '../../lib/pricing';
 // site próprio, separa em blocos WhatsApp/e-mail e salva como leads novos.
 // Deduplica por place_id (chave natural do Google).
 //
-// Automação completa (25/07/2026): se OPENAI_API_KEY estiver configurada, cada
+// Automação completa (25/07/2026): se GEMINI_API_KEY estiver configurada, cada
 // lead qualificado já sai com a mensagem de WhatsApp/e-mail pronta pra copiar —
 // antes disso só existia geração manual (botão "Gerar" por lead). Também
 // registra o custo real da rodada (Apify via usageTotalUsd + OpenAI calculado
