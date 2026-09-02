@@ -101,7 +101,7 @@ export default async function handler(req, res) {
         name: item.title,
         category: item.categoryName,
         niche_slug: run?.niche_slug || null,
-        oferta: run?.oferta || 'site',
+        oferta: run?.oferta || 'nuvemshop',
         city: run?.city || null,
         address: item.address,
         rating: item.totalScore,

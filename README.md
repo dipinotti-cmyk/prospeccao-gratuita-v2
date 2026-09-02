@@ -4,6 +4,35 @@ Reconstrução completa da ferramenta, em 25/07/2026, depois que a versão
 anterior (deployada direto na Vercel, sem repositório) apresentou um bug que
 não era possível corrigir por falta de acesso ao código-fonte original.
 
+## Pivot de 02/09/2026 — e-commerce de alta margem, região de alta renda
+
+O app deixou de prospectar negócio local genérico (mecânica, barbearia,
+nutricionista...) e passou a mirar **só** donos de loja de produto físico de
+alta margem (semijoias, moda, decoração...), achados pelo Google Maps em
+bairro/cidade de alto poder aquisitivo. É o funil que alimenta o
+reposicionamento nacional do `diogopinotti.com.br` como especialista
+Nuvemshop — a oferta da mensagem virou a loja virtual Nuvemshop, não mais
+site institucional ou automação de WhatsApp.
+
+O que mudou:
+
+- **10 nichos novos** em `schema.sql` (migração "02/09/2026 (2)"), 4 deles
+  com case real (loja Nuvemshop já entregue) em vez de protótipo — mais forte
+  na segunda mensagem. Os 26 nichos de serviço local antigos continuam no
+  banco (não quebra histórico de lead), mas nenhuma rodada nova deveria
+  escolher eles; apague pela aba **Nichos** do painel se quiser lista limpa.
+- **`oferta` ganhou o valor `nuvemshop`**, e virou o padrão em toda tela e
+  rota da API (era `site`).
+- **Prompt da IA** (`lib/generateMessage.js`) reescrito pra vender loja
+  virtual Nuvemshop pra dono de loja física, não site institucional.
+- **Lista de regiões de alta renda** pra usar no campo "Cidade" de cada
+  rodada, e o raciocínio completo por trás da escolha de nicho/região: ver
+  `docs/prospeccao-ecommerce-alta-renda.md` no repo `lupixa-agents`.
+
+**Antes de rodar a primeira prospecção com os nichos novos**, aplicar a
+migração "02/09/2026" do `schema.sql` no SQL Editor do Supabase (rodar de
+novo não faz mal — tudo é `if not exists` / `on conflict`).
+
 ## O que mudou da v1 pra v2
 
 - **Bug do status "Encerrado" corrigido de raiz.** A v1 tinha dois status

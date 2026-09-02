@@ -502,7 +502,7 @@ function LeadCardList({ leads, emptyText, renderActions }) {
 function NovaProspeccao({ niches, onStarted, onError, onOpenAddModal }) {
   const [niche, setNiche] = useState('');
   const [city, setCity] = useState('');
-  const [oferta, setOferta] = useState('site');
+  const [oferta, setOferta] = useState('nuvemshop');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -549,9 +549,10 @@ function NovaProspeccao({ niches, onStarted, onError, onOpenAddModal }) {
         <div className="form-row" style={{ marginTop: 12 }}>
           <label>Oferta desta rodada</label>
           <select value={oferta} onChange={(e) => setOferta(e.target.value)}>
-            <option value="site">Site profissional</option>
-            <option value="automacao">Automação de WhatsApp (CRM + lembretes)</option>
-            <option value="completo">Pacote completo (site + automação)</option>
+            <option value="nuvemshop">Loja virtual Nuvemshop</option>
+            <option value="site">Site profissional (legado)</option>
+            <option value="automacao">Automação de WhatsApp (legado)</option>
+            <option value="completo">Pacote completo (legado)</option>
           </select>
         </div>
 
@@ -1072,7 +1073,7 @@ function HistoricoTab({ runs }) {
                   <td>#{r.id}</td>
                   <td>{r.niche_slug}</td>
                   <td>{r.city}</td>
-                  <td>{r.oferta || 'site'}</td>
+                  <td>{r.oferta || 'nuvemshop'}</td>
                   <td style={{ color: r.status === 'done' ? 'var(--green)' : r.status === 'error' ? 'var(--red)' : 'var(--yellow)' }}>{r.status}</td>
                   <td>{r.found}</td>
                   <td>{r.saved}</td>
@@ -1183,7 +1184,7 @@ function NotesModal({ lead, onClose, onSave }) {
 
 function AddLeadModal({ niches, onClose, onCreated }) {
   const [form, setForm] = useState({
-    name: '', category: '', city: '', niche_slug: '', channel: 'whatsapp', oferta: 'site',
+    name: '', category: '', city: '', niche_slug: '', channel: 'whatsapp', oferta: 'nuvemshop',
     whatsapp: '', email: '', status: 'novo', valor: '', notes: '',
   });
   const [saving, setSaving] = useState(false);
@@ -1250,9 +1251,10 @@ function AddLeadModal({ niches, onClose, onCreated }) {
           <div className="form-row">
             <label>Oferta</label>
             <select value={form.oferta} onChange={(e) => set('oferta', e.target.value)}>
-              <option value="site">Site profissional</option>
-              <option value="automacao">Automação de WhatsApp (CRM + lembretes)</option>
-              <option value="completo">Pacote completo (site + automação)</option>
+              <option value="nuvemshop">Loja virtual Nuvemshop</option>
+              <option value="site">Site profissional (legado)</option>
+              <option value="automacao">Automação de WhatsApp (legado)</option>
+              <option value="completo">Pacote completo (legado)</option>
             </select>
           </div>
           <div className="form-row">
