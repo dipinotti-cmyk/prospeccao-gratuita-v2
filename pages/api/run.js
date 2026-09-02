@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     return apiError(res, 400, 'Informe "niche" e "city".');
   }
 
-  const ofertaValida = ['site', 'automacao', 'completo'].includes(oferta) ? oferta : 'site';
+  const ofertaValida = ['nuvemshop', 'site', 'automacao', 'completo'].includes(oferta) ? oferta : 'nuvemshop';
 
   try {
     const db = supabaseAdmin();
