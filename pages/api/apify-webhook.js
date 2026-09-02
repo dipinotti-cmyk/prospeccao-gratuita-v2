@@ -150,7 +150,23 @@ export default async function handler(req, res) {
         results.forEach((r, i) => {
           if (r.status !== 'fulfilled') return;
           const alvo = toSave[ini + i];
-          const { message, demo, subject, usage, model } = r.value;
+          const { qualificado, motivo, message, demo, subject, usage, model } = r.value;
+
+          if (usage) {
+            tokensIn += Number(usage.prompt_tokens || 0);
+            tokensOut += Number(usage.completion_tokens || 0);
+            costOpenai += aiCallCostUsd(usage);
+          }
+
+          // 02/09/2026 (4): lead que não vende produto físico próprio entra
+          // direto como "descartado", com o motivo nas notas — nunca sai pro
+          // Diogo com discurso de loja virtual pra quem vende serviço.
+          if (qualificado === false) {
+            alvo.status = 'descartado';
+            alvo.notes = `Não qualificado pela IA em ${new Date().toLocaleDateString('pt-BR')}: ${motivo}`;
+            alvo.message_model = model || AI_MODEL;
+            return;
+          }
 
           if (alvo.channel === 'email') {
             alvo.message_email = message;
@@ -164,12 +180,6 @@ export default async function handler(req, res) {
           if (demo) alvo.message_demo = demo;
 
           alvo.message_model = model || AI_MODEL;
-
-          if (usage) {
-            tokensIn += Number(usage.prompt_tokens || 0);
-            tokensOut += Number(usage.completion_tokens || 0);
-            costOpenai += aiCallCostUsd(usage);
-          }
           // se falhar, o lead segue sem mensagem pronta — não é motivo pra descartar o lead
         });
 
