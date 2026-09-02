@@ -1,4 +1,5 @@
 import { supabaseAdmin, apiError } from '../../lib/supabaseAdmin';
+import { encontrarRegiao } from '../../lib/regioesAltaRenda';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -23,15 +24,32 @@ export default async function handler(req, res) {
 
   try {
     const db = supabaseAdmin();
+
+    const { data: nicheRow } = await db.from('prospeccao_niches').select('*').eq('slug', niche).single();
+    const template = nicheRow?.gmaps_query || `${niche} em {cidade}`;
+
+    // 02/09/2026: "city" agora pode ser uma cidade calibrada em
+    // lib/regioesAltaRenda.js — nesse caso a rodada busca em TODOS os bairros
+    // nobres daquela cidade de uma vez (uma chamada só à Apify,
+    // searchStringsArray com vários termos). Cidade digitada na mão (fora da
+    // lista) continua funcionando como antes: busca só o texto literal.
+    const regiao = encontrarRegiao(city);
+    const areas = regiao ? regiao.bairros : [city];
+    const searchStringsArray = areas.map((area) => template.replace('{cidade}', area));
+
     const { data: run, error: runErr } = await db
       .from('prospeccao_runs')
-      .insert({ niche_slug: niche, city, source: 'manual', status: 'running', oferta: ofertaValida })
+      .insert({
+        niche_slug: niche,
+        city,
+        areas_buscadas: areas.join(', '),
+        source: 'manual',
+        status: 'running',
+        oferta: ofertaValida,
+      })
       .select()
       .single();
     if (runErr) return apiError(res, 500, `Falha ao criar run: ${runErr.message}`);
-
-    const { data: nicheRow } = await db.from('prospeccao_niches').select('*').eq('slug', niche).single();
-    const searchString = (nicheRow?.gmaps_query || `${niche} em {cidade}`).replace('{cidade}', city);
 
     // A Apify identifica actors públicos como "usuario/nome-do-actor" (é assim que
     // aparece na store, e é o formato natural pra colar na env var) mas a API REST
@@ -58,12 +76,15 @@ export default async function handler(req, res) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          searchStringsArray: [searchString],
-          // 50, nao 30: os ja contatados sao descartados antes de qualificar,
-          // entao a busca precisa de folga pra ainda sobrar lead novo. Cidade
-          // ja varrida devolve pouco de qualquer jeito — a tela avisa quando
-          // nao entrou ninguem.
-          maxCrawledPlacesPerSearch: 50,
+          searchStringsArray,
+          // 50 por busca quando e um bairro so (nao 30: os ja contatados sao
+          // descartados antes de qualificar, entao precisa de folga pra
+          // sobrar lead novo). Com VARIOS bairros na mesma rodada (cidade da
+          // lista calibrada), reduz pra 20 por bairro — o objetivo e
+          // cobertura ampla, nao esgotar cada bairro, e mantem o custo da
+          // rodada previsivel (20 x 7 bairros ainda cobre bem mais lead que
+          // uma rodada de bairro unico, sem multiplicar o gasto por 7).
+          maxCrawledPlacesPerSearch: searchStringsArray.length > 1 ? 20 : 50,
           language: 'pt-BR',
           includeWebResults: false,
         }),

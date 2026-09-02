@@ -15,8 +15,11 @@ import { aiCallCostUsd } from '../../lib/pricing';
 //
 // 04/08/2026: a IA passou a devolver DUAS mensagens. A primeira (abertura, que
 // continua vindo no campo "message") vai pra message_wa/message_email como
-// antes. A segunda, com o link do protótipo, vai pra message_demo. Nicho sem
-// protótipo cadastrado devolve demo = null e a coluna fica vazia.
+// antes. A segunda, com o link do protótipo/case/home, vai pra message_demo.
+//
+// 02/09/2026: a segunda mensagem passou a ser SEMPRE gerada — nicho sem case
+// nem modelo cai no fallback da home do site (lib/generateMessage.js), então
+// message_demo nunca fica vazia por falta de link.
 export const config = {
   api: { bodyParser: true },
 };

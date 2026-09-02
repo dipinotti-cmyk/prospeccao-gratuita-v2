@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { STATUSES, statusLabel, statusColor, formatValor, parseValor, computeStats, computeNicheStats } from '../lib/statuses';
+import { REGIOES_ALTA_RENDA } from '../lib/regioesAltaRenda';
+
+const CIDADE_MANUAL = '__manual__';
 
 // Painel reconstruído em 25/07/2026 seguindo as telas reais da v1 (prints do
 // Diogo): navegação por abas, cards de lead com a mensagem inteira visível,
@@ -501,13 +504,20 @@ function LeadCardList({ leads, emptyText, renderActions }) {
 // ————— Aba Nova prospecção —————
 function NovaProspeccao({ niches, onStarted, onError, onOpenAddModal }) {
   const [niche, setNiche] = useState('');
-  const [city, setCity] = useState('');
+  const [cidadeSelecionada, setCidadeSelecionada] = useState(REGIOES_ALTA_RENDA[0]?.cidade || CIDADE_MANUAL);
+  const [cidadeManual, setCidadeManual] = useState('');
   const [oferta, setOferta] = useState('nuvemshop');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!niche && niches.length) setNiche(niches[0].slug);
   }, [niches, niche]);
+
+  const regiao = REGIOES_ALTA_RENDA.find((r) => r.cidade === cidadeSelecionada) || null;
+  // "city" que vai pro backend: a cidade calibrada (expande em todos os
+  // bairros dela automaticamente, pages/api/run.js) ou o texto digitado à
+  // mão quando o Diogo escolhe "Outra cidade".
+  const city = cidadeSelecionada === CIDADE_MANUAL ? cidadeManual.trim() : cidadeSelecionada;
 
   async function submit(e) {
     e.preventDefault();
@@ -542,9 +552,28 @@ function NovaProspeccao({ niches, onStarted, onError, onOpenAddModal }) {
           </div>
           <div className="form-row" style={{ marginBottom: 0 }}>
             <label>Cidade</label>
-            <input value={city} onChange={(e) => setCity(e.target.value)} placeholder="São Paulo, SP" required />
+            <select value={cidadeSelecionada} onChange={(e) => setCidadeSelecionada(e.target.value)} required>
+              {REGIOES_ALTA_RENDA.map((r) => <option key={r.cidade} value={r.cidade}>{r.cidade}</option>)}
+              <option value={CIDADE_MANUAL}>Outra cidade (digitar)</option>
+            </select>
           </div>
         </div>
+
+        {regiao ? (
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+            Vai buscar em {regiao.bairros.length} bairro{regiao.bairros.length > 1 ? 's' : ''} de uma vez: {regiao.bairros.join(', ')}.
+          </p>
+        ) : (
+          <div className="form-row" style={{ marginTop: 6, marginBottom: 0 }}>
+            <label>Cidade/bairro (texto livre)</label>
+            <input
+              value={cidadeManual}
+              onChange={(e) => setCidadeManual(e.target.value)}
+              placeholder="São Paulo, SP"
+              required
+            />
+          </div>
+        )}
 
         <div className="form-row" style={{ marginTop: 12 }}>
           <label>Oferta desta rodada</label>
@@ -558,7 +587,9 @@ function NovaProspeccao({ niches, onStarted, onError, onOpenAddModal }) {
 
         {nichoAtual && !nichoAtual.demo_url && (
           <p className="muted" style={{ fontSize: 12.5, marginTop: 4, color: 'var(--yellow)' }}>
-            Este nicho não tem link de protótipo cadastrado, então os leads vão sair só com a mensagem de abertura. Preencha o campo "Link do protótipo" na aba Nichos pra a 2ª mensagem passar a ser gerada.
+            Este nicho ainda não tem case ou modelo próprio — a 2ª mensagem vai linkar a home do
+            site (diogopinotti.com.br) em vez de um exemplo específico do nicho. Preencha o campo
+            "Link do protótipo" na aba Nichos quando tiver um case pra esse tipo de loja.
           </p>
         )}
 
