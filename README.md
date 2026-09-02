@@ -29,9 +29,21 @@ O que mudou:
   rodada, e o raciocínio completo por trás da escolha de nicho/região: ver
   `docs/prospeccao-ecommerce-alta-renda.md` no repo `lupixa-agents`.
 
-**Antes de rodar a primeira prospecção com os nichos novos**, aplicar a
-migração "02/09/2026" do `schema.sql` no SQL Editor do Supabase (rodar de
-novo não faz mal — tudo é `if not exists` / `on conflict`).
+**Migração "02/09/2026" já aplicada em produção** (projeto Supabase
+`analisador-workana`, 02/09/2026) — os 10 nichos e as colunas já estão no
+banco. `schema.sql` fica como registro/fonte de verdade pra um banco novo;
+rodar de novo não faz mal (`if not exists` / `on conflict`).
+
+**Atenção — o banco está à frente do código:** a migração mexe só no
+Supabase; o código desta branch (`oferta` = `nuvemshop`, prompt novo em
+`lib/generateMessage.js`) ainda não foi mergeado na `main`, que é o que a
+Vercel usa em produção. Até o merge, o painel em produção já mostra os 10
+nichos novos no seletor (a lista vem direto do banco), mas a tela de oferta
+ainda oferece só as opções antigas (site/automação/completo) e o prompt da
+IA ainda é o antigo — rodar prospecção com nicho novo agora usa o contexto
+certo do nicho (a IA lê o `resumo`/`solução` daquele nicho, que já é
+e-commerce), mas a oferta escolhida na tela ainda sai errada. Mergear a
+branch antes da primeira rodada de verdade com nicho novo.
 
 ## O que mudou da v1 pra v2
 
