@@ -41,6 +41,34 @@ export default async function handler(req, res) {
       return apiError(res, 502, genErr.message);
     }
 
+    // 02/09/2026 (2): a IA qualifica antes de escrever. Lead que nao vende
+    // produto fisico proprio (conserto, feira, leilao) volta sem texto e com o
+    // motivo. Aqui ele vai pra "descartado" com o motivo nas notas, e as duas
+    // mensagens sao limpas — e o mesmo destino do botao "Sem interesse", so que
+    // decidido antes de gastar uma mensagem. Lead que ja saiu de "novo"
+    // (enviado, negociacao...) nao muda de status: a essa altura o Diogo ja
+    // sabe mais sobre ele do que a IA.
+    if (generated.qualificado === false) {
+      const motivo = `Não qualificado pela IA em ${new Date().toLocaleDateString('pt-BR')}: ${generated.motivo}`;
+      const patch = {
+        message_wa: null,
+        message_email: null,
+        message_demo: null,
+        message_model: generated.model || AI_MODEL,
+        notes: lead.notes ? `${motivo}\n${lead.notes}` : motivo,
+      };
+      if (lead.status === 'novo') patch.status = 'descartado';
+
+      const { data: updated, error: updateErr } = await db
+        .from('prospeccao_leads')
+        .update(patch)
+        .eq('id', id)
+        .select()
+        .single();
+      if (updateErr) return apiError(res, 500, `Falha ao registrar lead não qualificado: ${updateErr.message}`);
+      return res.status(200).json({ lead: updated, qualificado: false, motivo: generated.motivo });
+    }
+
     // message_demo é a segunda mensagem, a do protótipo. Vem null quando o
     // nicho não tem demo cadastrado, e nesse caso a coluna é limpa de
     // propósito: gerar de novo substitui o par inteiro, não deixa metade velha.

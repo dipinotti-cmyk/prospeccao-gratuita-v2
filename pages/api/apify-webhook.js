@@ -150,7 +150,24 @@ export default async function handler(req, res) {
         results.forEach((r, i) => {
           if (r.status !== 'fulfilled') return;
           const alvo = toSave[ini + i];
-          const { message, demo, subject, usage, model } = r.value;
+          const { message, demo, subject, usage, model, qualificado, motivo } = r.value;
+
+          if (usage) {
+            tokensIn += Number(usage.prompt_tokens || 0);
+            tokensOut += Number(usage.completion_tokens || 0);
+            costOpenai += aiCallCostUsd(usage);
+          }
+
+          // 02/09/2026 (2): a IA qualifica antes de escrever. Quem nao vende
+          // produto fisico proprio (conserto, feira, leilao) entra na base ja
+          // como "descartado", com o motivo nas notas e sem mensagem — fica
+          // registrado (e no ledger de contatados) sem poluir a aba de envio.
+          if (qualificado === false) {
+            alvo.status = 'descartado';
+            alvo.notes = `Não qualificado pela IA: ${motivo}`;
+            alvo.message_model = model || AI_MODEL;
+            return;
+          }
 
           if (alvo.channel === 'email') {
             alvo.message_email = message;
@@ -164,12 +181,6 @@ export default async function handler(req, res) {
           if (demo) alvo.message_demo = demo;
 
           alvo.message_model = model || AI_MODEL;
-
-          if (usage) {
-            tokensIn += Number(usage.prompt_tokens || 0);
-            tokensOut += Number(usage.completion_tokens || 0);
-            costOpenai += aiCallCostUsd(usage);
-          }
           // se falhar, o lead segue sem mensagem pronta — não é motivo pra descartar o lead
         });
 
