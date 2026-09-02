@@ -14,36 +14,44 @@ reposicionamento nacional do `diogopinotti.com.br` como especialista
 Nuvemshop — a oferta da mensagem virou a loja virtual Nuvemshop, não mais
 site institucional ou automação de WhatsApp.
 
-O que mudou:
+Duas rodadas de mudança no mesmo dia — o Diogo pediu mais profundidade depois
+da primeira (10 nichos, cidade digitada à mão):
 
-- **10 nichos novos** em `schema.sql` (migração "02/09/2026 (2)"), 4 deles
-  com case real (loja Nuvemshop já entregue) em vez de protótipo — mais forte
-  na segunda mensagem. Os 26 nichos de serviço local antigos continuam no
-  banco (não quebra histórico de lead), mas nenhuma rodada nova deveria
-  escolher eles; apague pela aba **Nichos** do painel se quiser lista limpa.
-- **`oferta` ganhou o valor `nuvemshop`**, e virou o padrão em toda tela e
-  rota da API (era `site`).
-- **Prompt da IA** (`lib/generateMessage.js`) reescrito pra vender loja
-  virtual Nuvemshop pra dono de loja física, não site institucional.
-- **Lista de regiões de alta renda** pra usar no campo "Cidade" de cada
-  rodada, e o raciocínio completo por trás da escolha de nicho/região: ver
-  `docs/prospeccao-ecommerce-alta-renda.md` no repo `lupixa-agents`.
+**Rodada 1 — pivot inicial:**
+- 10 nichos de e-commerce, `oferta = nuvemshop` como padrão, prompt da IA
+  reescrito.
 
-**Migração "02/09/2026" já aplicada em produção** (projeto Supabase
-`analisador-workana`, 02/09/2026) — os 10 nichos e as colunas já estão no
-banco. `schema.sql` fica como registro/fonte de verdade pra um banco novo;
-rodar de novo não faz mal (`if not exists` / `on conflict`).
+**Rodada 2 — expansão e limpeza de verdade:**
+- **Base antiga LIMPA, não só ignorada.** Os 112 leads, 63 runs e o ledger de
+  282 "já contatados" do processo velho foram **arquivados** (tabelas
+  `prospeccao_leads_arquivo_20260902`, `prospeccao_runs_arquivo_20260902`,
+  `prospeccao_contatados_arquivo_20260902` — mesmo padrão que já existia
+  aqui) e **removidos das tabelas ativas**. Os 32 nichos de serviço local
+  (os 26 do seed original + 6 de beleza que tinham sido adicionados direto no
+  Supabase, nunca documentados neste arquivo) foram **apagados de vez** —
+  não fazia sentido continuar ativos.
+- **De 10 pra 26 nichos**, agrupados em joias/acessórios, moda (8 sub-nichos:
+  boutique feminina, moda cristã, praia, infantil, masculina/alfaiataria,
+  plus size autoral, lingerie, calçados), casa/decoração, beleza/bem-estar,
+  gastronomia/presentes, pet/bebê, cozinha e arte/colecionáveis. Pesquisa e
+  raciocínio completo: `docs/prospeccao-ecommerce-alta-renda.md` no repo
+  `lupixa-agents`.
+- **Cidade virou dropdown com bairros automáticos.** `lib/regioesAltaRenda.js`
+  tem 21 cidades de alto poder aquisitivo com os bairros nobres de cada uma
+  já mapeados — escolher a cidade na tela dispara a busca em TODOS os
+  bairros dela numa rodada só (`searchStringsArray` da Apify aceita vários
+  termos por chamada). "Outra cidade (digitar)" continua disponível pra
+  cobertura fora da lista calibrada.
+- **A 2ª mensagem nunca mais fica vazia.** Nicho sem case nem modelo próprio
+  agora cai num fallback: o link vai pra **home do site**
+  (`diogopinotti.com.br`), com um texto de portfólio genérico em vez de
+  fingir ser exemplo daquele nicho específico. Antes, nicho sem `demo_url`
+  saía só com a mensagem de abertura.
 
-**Atenção — o banco está à frente do código:** a migração mexe só no
-Supabase; o código desta branch (`oferta` = `nuvemshop`, prompt novo em
-`lib/generateMessage.js`) ainda não foi mergeado na `main`, que é o que a
-Vercel usa em produção. Até o merge, o painel em produção já mostra os 10
-nichos novos no seletor (a lista vem direto do banco), mas a tela de oferta
-ainda oferece só as opções antigas (site/automação/completo) e o prompt da
-IA ainda é o antigo — rodar prospecção com nicho novo agora usa o contexto
-certo do nicho (a IA lê o `resumo`/`solução` daquele nicho, que já é
-e-commerce), mas a oferta escolhida na tela ainda sai errada. Mergear a
-branch antes da primeira rodada de verdade com nicho novo.
+**Migração aplicada em produção em duas etapas** (projeto Supabase
+`analisador-workana`, 02/09/2026): "02/09/2026 (1)/(2)" (rodada 1, 10 nichos)
+e "02/09/2026 (3)" (rodada 2, limpeza + expansão pra 26). `schema.sql` fica
+como registro/fonte de verdade pra um banco novo; rodar de novo não faz mal.
 
 ## O que mudou da v1 pra v2
 
@@ -87,4 +95,5 @@ branch antes da primeira rodada de verdade com nicho novo.
 - `pages/api/run.js` + `pages/api/apify-webhook.js` — busca automática via Apify
 - `pages/api/cron-followups.js` — sinaliza leads com follow-up vencido (+48h), chamado pelo Vercel Cron
 - `lib/statuses.js` — fonte única de verdade dos status (o coração da correção do bug)
+- `lib/regioesAltaRenda.js` — cidades de alto poder aquisitivo + bairros nobres calibrados, usada no dropdown de Cidade e na expansão de busca em `pages/api/run.js`
 - `schema.sql` — schema completo do Supabase
