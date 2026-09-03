@@ -105,7 +105,11 @@ export default function Dashboard() {
     whatsapp: leads.filter((l) => l.channel === 'whatsapp' && l.status === 'novo'),
     email: leads.filter((l) => l.channel === 'email' && l.status === 'novo'),
     aguardando: leads.filter((l) => l.status === 'enviado' || l.status === 'aguardando_resposta'),
-    negociacao: leads.filter((l) => l.status === 'negociacao'),
+    // Quem acabou de ganhar mensagem seguinte vai pro topo: é o lead que o
+    // Diogo está respondendo agora, e no celular ninguém rola atrás dele.
+    negociacao: leads
+      .filter((l) => l.status === 'negociacao')
+      .sort((a, b) => new Date(b.mensagem_seguinte_at || 0) - new Date(a.mensagem_seguinte_at || 0)),
   }), [leads]);
 
   const tabCounts = {
@@ -171,8 +175,13 @@ export default function Dashboard() {
       throw new Error(json.error || 'Falha ao gerar a próxima mensagem.');
     }
     setLeads((cur) => cur.map((l) => (l.id === id ? json.lead : l)));
+    // O lead acabou de sair desta aba (virou negociação). Sem trocar de aba, a
+    // lista encolhe embaixo do dedo e a tela cai num card qualquer, como se
+    // tivesse dado erro — a mensagem que ele quer está na outra aba.
+    setTab('negociacao');
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
     const avisos = (json.avisos || []).join(' ');
-    flash(`Próxima mensagem pronta na aba Negociação.${avisos ? ` ⚠ ${avisos}` : ''}`);
+    flash(`Próxima mensagem de ${json.lead?.name || 'lead'} pronta, é só copiar.${avisos ? ` ⚠ ${avisos}` : ''}`);
   }
 
   function copyProxima(lead) {
