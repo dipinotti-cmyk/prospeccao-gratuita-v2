@@ -21,6 +21,10 @@ export default async function handler(req, res) {
     return apiError(res, 400, 'ID de lead inválido.');
   }
 
+  // preview: gera e devolve o texto SEM gravar nada e SEM mover o lead de
+  // status. Serve pra conferir como a mensagem está saindo (e pra testar
+  // mudança de prompt) sem sujar o funil com lead que não respondeu.
+  const preview = req.body?.preview === true;
   const respostaLead = String(req.body?.respostaLead || '').trim();
   if (!respostaLead) {
     return apiError(res, 400, 'Cole o que o lead respondeu — é isso que a mensagem seguinte responde.');
@@ -52,6 +56,17 @@ export default async function handler(req, res) {
       gerado = await gerarMensagemSeguinte({ lead, respostaLead, niche, apiKey });
     } catch (genErr) {
       return apiError(res, 502, genErr.message);
+    }
+
+    if (preview) {
+      return res.status(200).json({
+        preview: true,
+        mensagem: gerado.mensagem,
+        plano: gerado.plano,
+        quantidade: gerado.quantidade,
+        avisos: gerado.avisos || [],
+        model: gerado.model,
+      });
     }
 
     // Mesmo tratamento de custo do regenerate.js: a chamada avulsa entra na
