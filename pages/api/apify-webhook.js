@@ -1,6 +1,7 @@
 import { supabaseAdmin, apiError } from '../../lib/supabaseAdmin';
 import { generateLeadMessage, aiApiKey, AI_MODEL } from '../../lib/generateMessage';
 import { aiCallCostUsd } from '../../lib/pricing';
+import { encontrarRegiao, leadForaDaRegiao } from '../../lib/regioesAltaRenda';
 
 // Recebe o callback da Apify quando uma run termina, filtra quem não tem
 // site próprio, separa em blocos WhatsApp/e-mail e salva como leads novos.
@@ -76,6 +77,15 @@ export default async function handler(req, res) {
     }
     let repetidos = 0;
 
+    // 03/09/2026: a busca do Google Maps casa a PALAVRA do bairro, não a
+    // região. "Cotia, SP (Granja Viana)" trouxe uma joalheria do MARANHÃO
+    // (DDD 98) só porque tinha "granja" no endereço. Rodada de cidade
+    // calibrada agora confere UF do endereço e DDD do telefone antes de
+    // gerar mensagem — ver leadForaDaRegiao em lib/regioesAltaRenda.js.
+    // Rodada de cidade digitada à mão não tem UF conhecida: segue sem checar.
+    const regiao = encontrarRegiao(run?.city || '');
+    let foraDaRegiao = 0;
+
     for (const item of items) {
       if (item.placeId && jaContatados.has(item.placeId)) { repetidos += 1; continue; }
       const hasOwnSite = item.website && !/instagram\.com|facebook\.com|linktr\.ee|ifood|doctoralia/i.test(item.website);
@@ -85,18 +95,29 @@ export default async function handler(req, res) {
       const email = item.email || null;
       if (!phone && !email) continue;
 
+      // Fora da região: entra como "descartado" com o motivo nas notas (mesmo
+      // padrão do lead não qualificado pela IA, logo abaixo) e não gasta
+      // chamada da Gemini — o loop de geração pula quem já vem descartado.
+      // Também não ocupa vaga nos blocos de 10: as vagas são pra lead que vai
+      // virar mensagem, senão uma joalheria do Maranhão rouba o lugar de uma
+      // de Alphaville.
+      const motivoFora = regiao ? leadForaDaRegiao({ address: item.address, phone }, regiao) : null;
+
       let channel = null;
-      if (phone && whatsappCount < 10) {
+      if (motivoFora) {
+        channel = phone ? 'whatsapp' : 'email';
+        foraDaRegiao += 1;
+      } else if (phone && whatsappCount < 10) {
         channel = 'whatsapp';
         whatsappCount += 1;
+        qualified += 1;
       } else if (email && emailCount < 10) {
         channel = 'email';
         emailCount += 1;
+        qualified += 1;
       } else {
         continue; // blocos já completos (10 whatsapp + 10 e-mail)
       }
-
-      qualified += 1;
 
       toSave.push({
         run_id: run?.id || null,
@@ -116,7 +137,10 @@ export default async function handler(req, res) {
         site_tipo: item.website ? 'social' : 'nenhum',
         gmaps_url: item.url,
         channel,
-        status: 'novo',
+        status: motivoFora ? 'descartado' : 'novo',
+        ...(motivoFora
+          ? { notes: `Fora da região pesquisada (${new Date().toLocaleDateString('pt-BR')}): ${motivoFora}` }
+          : {}),
       });
     }
 
@@ -133,23 +157,28 @@ export default async function handler(req, res) {
     let costOpenai = 0;
     const apiKey = aiApiKey();
 
-    if (apiKey && toSave.length > 0) {
+    // Quem já entrou descartado (fora da região) não vai pra IA: mensagem pra
+    // ele não seria usada, e a chamada custa dinheiro. Os objetos são os
+    // mesmos de toSave, por referência — escrever aqui escreve lá.
+    const paraGerar = toSave.filter((l) => l.status !== 'descartado');
+
+    if (apiKey && paraGerar.length > 0) {
       const LOTE = 3;
       const PAUSA_MS = 1500;
       const ORCAMENTO_MS = 45000;
       const inicio = Date.now();
 
-      for (let ini = 0; ini < toSave.length; ini += LOTE) {
+      for (let ini = 0; ini < paraGerar.length; ini += LOTE) {
         if (Date.now() - inicio > ORCAMENTO_MS) break;
 
-        const bloco = toSave.slice(ini, ini + LOTE);
+        const bloco = paraGerar.slice(ini, ini + LOTE);
         const results = await Promise.allSettled(
           bloco.map((lead) => generateLeadMessage({ lead, niche, apiKey }))
         );
 
         results.forEach((r, i) => {
           if (r.status !== 'fulfilled') return;
-          const alvo = toSave[ini + i];
+          const alvo = paraGerar[ini + i];
           const { qualificado, motivo, message, demo, subject, usage, model } = r.value;
 
           if (usage) {
@@ -183,7 +212,7 @@ export default async function handler(req, res) {
           // se falhar, o lead segue sem mensagem pronta — não é motivo pra descartar o lead
         });
 
-        if (ini + LOTE < toSave.length) {
+        if (ini + LOTE < paraGerar.length) {
           await new Promise((r) => setTimeout(r, PAUSA_MS));
         }
       }
@@ -217,6 +246,7 @@ export default async function handler(req, res) {
       );
     }
     if (falhas > 0) console.error(`[apify-webhook] ${falhas} lead(s) falharam ao salvar na run ${run?.id}`);
+    if (foraDaRegiao > 0) console.warn(`[apify-webhook] ${foraDaRegiao} lead(s) fora de ${run?.city} entraram como descartado na run ${run?.id}`);
 
     // Custo real da Apify: só fica disponível depois que a run termina —
     // por isso é buscado aqui (no fim), não em /api/run (no início).
@@ -250,7 +280,7 @@ export default async function handler(req, res) {
         .eq('id', run.id);
     }
 
-    return res.status(200).json({ found: items.length, qualified, saved, duplicados: duplicados + repetidos, cost_apify: costApify, cost_openai: costOpenai });
+    return res.status(200).json({ found: items.length, qualified, saved, duplicados: duplicados + repetidos, fora_da_regiao: foraDaRegiao, cost_apify: costApify, cost_openai: costOpenai });
   } catch (err) {
     return apiError(res, 500, err.message || 'Erro inesperado no webhook.');
   }

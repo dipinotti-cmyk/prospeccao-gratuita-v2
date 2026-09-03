@@ -75,10 +75,43 @@ como registro/fonte de verdade pra um banco novo; rodar de novo não faz mal.
   em vez de quebrar — o resto do painel continua funcionando normalmente.
 - **Código versionado no GitHub desde o dia 1.** Zero ponto cego dessa vez.
 
+## 03/09/2026 — resposta do lead vira mensagem, e lead de fora da região não passa mais
+
+**1. O botão "Respondeu" escreve a próxima mensagem.** Na aba "Aguardando
+resposta", ele agora abre um modal onde o Diogo cola o que o lead respondeu no
+WhatsApp. A resposta vai pra `pages/api/leads/[id]/responder.js`, que chama
+`lib/generateReply.js` — prompt PRÓPRIO, de vendedor sênior de loja premium,
+nada a ver com o prompt de primeiro contato — e grava a mensagem pronta em
+`mensagem_seguinte`. Só depois de gerar é que o lead vira negociação
+(`replied: true`). A estrutura da mensagem é fixa e foi aprovada depois de três
+textos genéricos reprovados: consequência em dinheiro, preço com o resultado
+colado, parcelamento com abertura pra negociar forma e tamanho (nunca preço),
+pergunta curta. A tabela de preço mora em `lib/planos.js`, fonte única — o
+código nunca escreve valor à mão, e uma trava recusa mensagem com número que
+não esteja lá.
+
+Precisa da migração `migrations/2026-09-03-mensagem-seguinte.sql`.
+
+**2. Lead de outro estado não recebe mais mensagem.** A busca do Google Maps
+casa a PALAVRA do bairro, não a região: "Cotia, SP (Granja Viana)" trouxe uma
+joalheria do Maranhão (DDD 98) só porque tinha "granja" no endereço.
+`lib/regioesAltaRenda.js` ganhou a UF explícita de cada região, a tabela
+DDD → UF e `leadForaDaRegiao()`. O webhook da Apify agora grava esse lead como
+`descartado` com o motivo nas notas e **não gasta chamada da Gemini** com ele.
+`GET /api/leads/checar-regiao` roda a mesma regra na base inteira e só LISTA
+quem está fora (não apaga nada). No card, o DDD e a cidade/UF do endereço
+aparecem ao lado do nome.
+
+Regra, em ordem de confiança: endereço com UF diferente barra; endereço com a
+UF certa passa mesmo com DDD de outro estado (aparece como aviso amarelo, não
+como descarte — loja de Alphaville com celular do Paraná existe); sem UF no
+endereço, o DDD decide. Falta de dado nunca barra.
+
 ## Setup
 
 1. `npm install`
-2. Rodar `schema.sql` no Supabase do projeto (SQL Editor).
+2. Rodar `schema.sql` no Supabase do projeto (SQL Editor) e, depois, os
+   arquivos de `migrations/` em ordem de data.
 3. Copiar `.env.example` pra `.env.local` e preencher pelo menos
    `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` (painel Settings → API do
    Supabase). As outras três variáveis são opcionais — sem elas o painel
@@ -91,9 +124,12 @@ como registro/fonte de verdade pra um banco novo; rodar de novo não faz mal.
 
 - `pages/index.js` — painel (dashboard, tabela de leads, cadastro manual, disparo de prospecção)
 - `pages/api/leads/*` — CRUD de leads
-- `pages/api/leads/[id]/regenerate.js` — geração de mensagem via OpenAI
+- `pages/api/leads/[id]/regenerate.js` — geração da mensagem de primeiro contato (Gemini)
+- `pages/api/leads/[id]/responder.js` — o lead respondeu: gera a mensagem seguinte (`lib/generateReply.js`) e move pra negociação
+- `pages/api/leads/checar-regiao.js` — audita a base e lista quem está fora da região pesquisada (só lista, não apaga)
+- `lib/planos.js` — tabela de preço (Start/Pro/Advanced/Personalizado), fonte única
 - `pages/api/run.js` + `pages/api/apify-webhook.js` — busca automática via Apify
 - `pages/api/cron-followups.js` — sinaliza leads com follow-up vencido (+48h), chamado pelo Vercel Cron
 - `lib/statuses.js` — fonte única de verdade dos status (o coração da correção do bug)
-- `lib/regioesAltaRenda.js` — cidades de alto poder aquisitivo + bairros nobres calibrados, usada no dropdown de Cidade e na expansão de busca em `pages/api/run.js`
+- `lib/regioesAltaRenda.js` — cidades de alto poder aquisitivo + bairros nobres calibrados (dropdown de Cidade e expansão de busca em `pages/api/run.js`), UF por região, tabela DDD → UF e a checagem `leadForaDaRegiao()`
 - `schema.sql` — schema completo do Supabase

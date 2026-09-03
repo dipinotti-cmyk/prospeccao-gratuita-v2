@@ -71,6 +71,11 @@ create table if not exists prospeccao_leads (
   channel         text,               -- 'whatsapp' | 'email'
   message_wa      text,
   message_demo    text,               -- 2a mensagem, a do link (add. 19/08/2026)
+  -- Mensagem SEGUINTE: a que vai depois que o lead responde (add. 03/09/2026,
+  -- migrations/2026-09-03-mensagem-seguinte.sql)
+  resposta_lead        text,          -- o que o lead respondeu no WhatsApp, colado pelo Diogo
+  mensagem_seguinte    text,          -- mensagem gerada a partir dessa resposta
+  mensagem_seguinte_at timestamptz,   -- quando foi gerada
   email_subject   text,
   message_email   text,
   followup_wa     text,

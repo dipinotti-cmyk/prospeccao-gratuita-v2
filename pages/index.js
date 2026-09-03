@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { STATUSES, statusLabel, statusColor, formatValor, parseValor, computeStats, computeNicheStats } from '../lib/statuses';
-import { REGIOES_ALTA_RENDA } from '../lib/regioesAltaRenda';
+import {
+  REGIOES_ALTA_RENDA,
+  encontrarRegiao,
+  leadForaDaRegiao,
+  dddDivergente,
+  dddDoTelefone,
+  estadoDoTelefone,
+  estadoDoEndereco,
+} from '../lib/regioesAltaRenda';
 
 const CIDADE_MANUAL = '__manual__';
 
@@ -42,6 +50,7 @@ export default function Dashboard() {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [editingLead, setEditingLead] = useState(null);
   const [notesLead, setNotesLead] = useState(null);
+  const [respondeuLead, setRespondeuLead] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const loadingRef = useRef(false);
 
@@ -143,6 +152,33 @@ export default function Dashboard() {
   function flash(msg) {
     setInfo(msg);
     setTimeout(() => setInfo(null), 3000);
+  }
+
+  // O lead respondeu: o texto dele vira a mensagem SEGUINTE, gerada pela IA
+  // (vendedor sênior, com preço na mesa) e gravada no lead. Só depois de gerar
+  // é que o lead vira negociação — quem faz isso é a rota (03/09/2026).
+  async function responder(id, respostaLead) {
+    setError(null);
+    setInfo('Escrevendo a próxima mensagem...');
+    const resp = await fetch(`/api/leads/${id}/responder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ respostaLead }),
+    });
+    const json = await resp.json();
+    if (!resp.ok) {
+      setInfo(null);
+      throw new Error(json.error || 'Falha ao gerar a próxima mensagem.');
+    }
+    setLeads((cur) => cur.map((l) => (l.id === id ? json.lead : l)));
+    const avisos = (json.avisos || []).join(' ');
+    flash(`Próxima mensagem pronta na aba Negociação.${avisos ? ` ⚠ ${avisos}` : ''}`);
+  }
+
+  function copyProxima(lead) {
+    if (!lead.mensagem_seguinte) return;
+    navigator.clipboard?.writeText(lead.mensagem_seguinte);
+    flash('Próxima mensagem copiada.');
   }
 
   // Primeira mensagem: a abertura. É ela que abre a conversa.
@@ -329,7 +365,7 @@ export default function Dashboard() {
               emptyText="Nenhum lead aguardando resposta."
               renderActions={(lead) => (
                 <>
-                  <button className="btn" style={{ background: 'var(--green)', color: '#0A0A0A' }} onClick={() => updateLead(lead.id, { status: 'negociacao', replied: true })}>Respondeu</button>
+                  <button className="btn" style={{ background: 'var(--green)', color: '#0A0A0A' }} onClick={() => setRespondeuLead(lead)}>Respondeu</button>
                   <button className="btn secondary" onClick={() => updateLead(lead.id, { status: 'descartado' })}>Sem interesse</button>
                   <button className="btn secondary" onClick={() => setNotesLead(lead)}>Anotações</button>
                 </>
@@ -343,6 +379,9 @@ export default function Dashboard() {
               emptyText="Nenhum lead em negociação no momento."
               renderActions={(lead) => (
                 <>
+                  {lead.mensagem_seguinte && (
+                    <button className="btn secondary" onClick={() => copyProxima(lead)}>Copiar próxima mensagem</button>
+                  )}
                   <button className="btn" style={{ background: 'var(--green)', color: '#0A0A0A' }} onClick={() => fechou(lead)}>Fechou</button>
                   <button className="btn secondary" onClick={() => updateLead(lead.id, { status: 'descartado' })}>Recusou proposta</button>
                   <button className="btn secondary" onClick={() => setNotesLead(lead)}>Anotações</button>
@@ -382,6 +421,21 @@ export default function Dashboard() {
         />
       )}
 
+      {respondeuLead && (
+        <RespostaLeadModal
+          lead={respondeuLead}
+          onClose={() => setRespondeuLead(null)}
+          onGerar={async (texto) => {
+            await responder(respondeuLead.id, texto);
+            setRespondeuLead(null);
+          }}
+          onSoMover={async () => {
+            await updateLead(respondeuLead.id, { status: 'negociacao', replied: true });
+            setRespondeuLead(null);
+          }}
+        />
+      )}
+
       {showAddModal && (
         <AddLeadModal
           niches={niches}
@@ -411,6 +465,18 @@ function rotuloLink(url) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
 }
 
+// Cidade e UF como estão escritas no endereço do Google ("... - Cohama, São
+// Luís - MA, 65074-000" vira "São Luís - MA"). Serve pro Diogo bater o olho:
+// o Maps casa a palavra do bairro, não a região, e já mandou joalheria do
+// Maranhão numa busca de Cotia/SP.
+function cidadeUfDoEndereco(address) {
+  const uf = estadoDoEndereco(address);
+  if (!uf) return null;
+  const m = String(address).match(new RegExp(`([^,\\-]{2,40}?)\\s*-\\s*${uf}(?:[^A-Za-zÀ-ÿ]|$)`));
+  const cidade = m ? m[1].trim() : null;
+  return cidade ? `${cidade} - ${uf}` : uf;
+}
+
 function LeadCardList({ leads, emptyText, renderActions }) {
   if (!leads.length) return <div className="empty-state">{emptyText}</div>;
 
@@ -429,6 +495,14 @@ function LeadCardList({ leads, emptyText, renderActions }) {
         const principal = lead.channel === 'email' ? lead.message_email : lead.message_wa;
         const temDuas = Boolean(principal && lead.message_demo);
 
+        const telefone = lead.whatsapp || lead.phone;
+        const ddd = dddDoTelefone(telefone);
+        const ufTelefone = estadoDoTelefone(telefone);
+        const localEndereco = cidadeUfDoEndereco(lead.address);
+        const regiao = encontrarRegiao(lead.city || '');
+        const motivoFora = regiao ? leadForaDaRegiao({ address: lead.address, phone: telefone }, regiao) : null;
+        const avisoDdd = regiao && !motivoFora ? dddDivergente({ address: lead.address, phone: telefone }, regiao) : null;
+
         return (
           <div className="panel" key={lead.id} style={{ marginBottom: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -436,6 +510,21 @@ function LeadCardList({ leads, emptyText, renderActions }) {
               <span className="badge" style={{ border: '1px solid var(--green)', color: 'var(--green)' }}>
                 {lead.channel === 'email' ? 'E-mail' : 'WhatsApp'}
               </span>
+              {/* Onde esse lead fica DE VERDADE: DDD do telefone e cidade/UF do
+                  endereço do Google. Fica ao lado do nome de propósito — é o
+                  que denuncia o lead de outro estado antes de mandar mensagem. */}
+              {(ddd || localEndereco) && (
+                <span
+                  className="badge"
+                  title={lead.address || ''}
+                  style={{
+                    border: `1px solid ${motivoFora ? 'var(--red)' : avisoDdd ? 'var(--yellow)' : 'var(--border)'}`,
+                    color: motivoFora ? 'var(--red)' : avisoDdd ? 'var(--yellow)' : 'var(--muted)',
+                  }}
+                >
+                  {[ddd ? `DDD ${ddd}${ufTelefone ? `/${ufTelefone}` : ''}` : null, localEndereco].filter(Boolean).join(' · ')}
+                </span>
+              )}
               {lead.site_tipo === 'social' && (
                 <span className="badge" style={{ border: '1px solid var(--yellow)', color: 'var(--yellow)' }}>só rede social</span>
               )}
@@ -484,6 +573,35 @@ function LeadCardList({ leads, emptyText, renderActions }) {
                   2ª mensagem · protótipo {lead.channel === 'whatsapp' ? '(mandar logo depois da 1ª)' : '(vai junto no mesmo e-mail)'}
                 </div>
                 {lead.message_demo}
+              </div>
+            )}
+
+            {motivoFora && (
+              <p style={{ marginTop: 8, fontSize: 12.5, color: 'var(--red)' }}>
+                ⚠ Fora da região pesquisada: {motivoFora}
+              </p>
+            )}
+
+            {avisoDdd && (
+              <p style={{ marginTop: 8, fontSize: 12.5, color: 'var(--yellow)' }}>
+                Confira antes de mandar: {avisoDdd}.
+              </p>
+            )}
+
+            {lead.resposta_lead && (
+              <div style={{ ...caixa, borderColor: 'var(--border)' }}>
+                <div style={etiqueta}>o que ele respondeu</div>
+                {lead.resposta_lead}
+              </div>
+            )}
+
+            {lead.mensagem_seguinte && (
+              <div style={{ ...caixa, borderColor: 'rgba(34,197,94,0.35)' }}>
+                <div style={{ ...etiqueta, color: 'var(--green)' }}>
+                  próxima mensagem · resposta com preço
+                  {lead.mensagem_seguinte_at ? ` (gerada em ${new Date(lead.mensagem_seguinte_at).toLocaleDateString('pt-BR')})` : ''}
+                </div>
+                {lead.mensagem_seguinte}
               </div>
             )}
 
@@ -806,8 +924,8 @@ const RESPOSTAS = [
   },
   {
     objecao: 'Quanto custa?',
-    porque: 'Responder com faixa mostra que existe preço e filtra quem não tem orçamento. Fugir da pergunta mata a conversa.',
-    texto: 'Depende do tamanho, mas pra te dar um norte: site de uma página fica entre R$ 800 e R$ 1.200, e site completo com serviços, depoimentos e área de contato fica entre R$ 1.200 e R$ 1.800. Tudo com domínio, hospedagem do primeiro ano e o site no ar.\n\nPra fechar o valor eu preciso saber só duas coisas: quantos serviços você quer mostrar e se já tem as fotos. Me responde essas duas que eu te mando o valor exato.',
+    porque: 'Responder com preço mostra que existe preço e filtra quem não tem orçamento. Fugir da pergunta mata a conversa. Tabela de 03/09/2026 (lib/planos.js) — o botão "Respondeu", na aba Aguardando resposta, escreve essa mesma resposta adaptada ao que o lead perguntou.',
+    texto: 'Cada "quanto custa?" no direct é uma venda esperando alguém responder. Na loja, ela fecha sozinha.\n\nLoja com até 40 peças, Sacolinha do Instagram, Google Shopping e Nuvem Marketing: R$ 1.900. Pode ser em 3x de R$ 633 sem juros, R$ 1.805 à vista, ou em até 10x no cartão. Se quiser começar menor, com até 15 peças, R$ 1.300, em 3x de R$ 433 ou R$ 1.235 à vista, e depois a gente amplia.\n\nPra fechar, eu te mando uma proposta de uma página com tudo escrito, você decide com calma e a gente combina a forma de pagamento que couber no seu caixa.\n\nQuantas peças você tem hoje?',
   },
   {
     objecao: 'Vou pensar / depois eu vejo',
@@ -1171,6 +1289,64 @@ function EditMessageModal({ lead, onClose, onSave }) {
           <div className="modal-actions">
             <button type="button" className="btn secondary" onClick={onClose}>Cancelar</button>
             <button type="submit" className="btn" disabled={saving}>{saving ? 'Salvando...' : 'Salvar mensagens'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// O que o lead respondeu no WhatsApp entra aqui, colado. Sai a mensagem
+// seguinte, escrita pelo prompt de vendedor sênior (lib/generateReply.js) —
+// era isso que o Diogo escrevia na mão toda vez (03/09/2026).
+function RespostaLeadModal({ lead, onClose, onGerar, onSoMover }) {
+  const [texto, setTexto] = useState(lead.resposta_lead || '');
+  const [gerando, setGerando] = useState(false);
+  const [err, setErr] = useState(null);
+
+  async function submit(e) {
+    e.preventDefault();
+    setErr(null);
+    if (!texto.trim()) { setErr('Cola o que ele respondeu — é isso que a mensagem responde.'); return; }
+    setGerando(true);
+    try {
+      await onGerar(texto.trim());
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setGerando(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={gerando ? undefined : onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>O que ele respondeu? — {lead.name}</h3>
+        {err && <div className="error-banner">{err}</div>}
+        <form onSubmit={submit}>
+          <div className="form-row">
+            <label>Cole aqui a resposta dele, do jeito que veio no WhatsApp</label>
+            <textarea
+              rows={6}
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              placeholder="quanto custa?"
+              autoFocus
+              disabled={gerando}
+            />
+          </div>
+          <p className="muted" style={{ fontSize: 12.5, marginTop: -4 }}>
+            A próxima mensagem sai com o preço do plano indicado, o parcelamento e uma pergunta de
+            fechamento. O lead vai pra Negociação só depois que ela for gerada.
+          </p>
+          <div className="modal-actions">
+            <button type="button" className="btn secondary" onClick={onClose} disabled={gerando}>Cancelar</button>
+            <button type="button" className="btn secondary" onClick={onSoMover} disabled={gerando}>
+              Só mover pra negociação
+            </button>
+            <button type="submit" className="btn" disabled={gerando}>
+              {gerando ? 'Escrevendo...' : 'Gerar próxima mensagem'}
+            </button>
           </div>
         </form>
       </div>
