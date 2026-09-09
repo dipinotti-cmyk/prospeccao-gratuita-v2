@@ -10,7 +10,7 @@
       "maxDuration": 60
     },
     "pages/api/leads/regenerate-all.js": {
-      "maxDuration": 300
+      "maxDuration": 60
     }
   },
   "headers": [

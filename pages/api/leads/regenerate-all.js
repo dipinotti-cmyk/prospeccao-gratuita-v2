@@ -17,6 +17,11 @@ import { aiCallCostUsd } from '../../../lib/pricing';
 //
 // Protegido pelo mesmo CRON_SECRET que ja existe pros outros jobs em lote,
 // pra nao ficar aberto pra qualquer um disparar geracao (custo de IA).
+// Plano Hobby da Vercel: 60s por invocacao. Um lote de 12 leads (Gemini leva
+// uns 2-4s por chamada) cabe com folga; o resto fica pra proxima chamada. O
+// retorno traz "restantes" pra saber se precisa chamar de novo.
+const LOTE_PADRAO = 12;
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
@@ -33,15 +38,19 @@ export default async function handler(req, res) {
     return apiError(res, 501, 'GEMINI_API_KEY não está configurada nas variáveis de ambiente da Vercel.');
   }
 
+  const limite = Number(req.query.limite) > 0 ? Number(req.query.limite) : LOTE_PADRAO;
+
   const db = supabaseAdmin();
 
   const { data: leads, error: fetchErr } = await db
     .from('prospeccao_leads')
     .select('*')
-    .eq('status', 'novo');
+    .eq('status', 'novo')
+    .order('id', { ascending: true })
+    .limit(limite);
 
   if (fetchErr) return apiError(res, 500, `Falha ao buscar leads: ${fetchErr.message}`);
-  if (!leads || leads.length === 0) return res.status(200).json({ total: 0, regenerados: 0, desqualificados: 0, falhas: [] });
+  if (!leads || leads.length === 0) return res.status(200).json({ total: 0, regenerados: 0, desqualificados: 0, restantes: 0, falhas: [] });
 
   const nichesCache = new Map();
   async function nicheDoLead(lead) {
@@ -122,5 +131,16 @@ export default async function handler(req, res) {
     }
   }
 
-  return res.status(200).json({ total: leads.length, regenerados, desqualificados, falhas });
+  const { count: restantes } = await db
+    .from('prospeccao_leads')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'novo');
+
+  return res.status(200).json({
+    total: leads.length,
+    regenerados,
+    desqualificados,
+    restantes: restantes || 0,
+    falhas,
+  });
 }
