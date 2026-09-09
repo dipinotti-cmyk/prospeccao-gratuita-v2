@@ -41,13 +41,31 @@ export default async function handler(req, res) {
       return apiError(res, 502, genErr.message);
     }
 
-    // 02/09/2026 (2): a IA qualifica antes de escrever. Lead que nao vende
-    // produto fisico proprio (conserto, feira, leilao) volta sem texto e com o
-    // motivo. Aqui ele vai pra "descartado" com o motivo nas notas, e as duas
-    // mensagens sao limpas — e o mesmo destino do botao "Sem interesse", so que
-    // decidido antes de gastar uma mensagem. Lead que ja saiu de "novo"
-    // (enviado, negociacao...) nao muda de status: a essa altura o Diogo ja
-    // sabe mais sobre ele do que a IA.
+    // Soma o custo desta chamada avulsa na rodada de origem, pra o dashboard de
+    // custos continuar refletindo a realidade mesmo depois de "Gerar de novo"
+    // várias vezes num lead. Leads criados manualmente (sem run_id) não têm
+    // rodada pra atribuir — custo real do mesmo jeito, só não some no total por nicho.
+    // Roda pra qualificado e não qualificado: os dois gastaram a mesma chamada.
+    if (lead.run_id && generated.usage) {
+      const cost = aiCallCostUsd(generated.usage);
+      const { data: run } = await db.from('prospeccao_runs').select('cost_openai, tokens_in, tokens_out').eq('id', lead.run_id).single();
+      if (run) {
+        await db
+          .from('prospeccao_runs')
+          .update({
+            cost_openai: Number(run.cost_openai || 0) + cost,
+            tokens_in: Number(run.tokens_in || 0) + Number(generated.usage.prompt_tokens || 0),
+            tokens_out: Number(run.tokens_out || 0) + Number(generated.usage.completion_tokens || 0),
+          })
+          .eq('id', lead.run_id);
+      }
+    }
+
+    // 02/09/2026 (4): lead que a IA qualificou como "não vende produto físico
+    // próprio" vai pra "descartado" com o motivo nas notas — mesmo destino do
+    // botão "Sem interesse", só que decidido antes de gastar uma mensagem.
+    // Lead que já saiu de "novo" (enviado, negociação...) não muda de status:
+    // a essa altura o Diogo já sabe mais sobre ele do que a IA.
     if (generated.qualificado === false) {
       const motivo = `Não qualificado pela IA em ${new Date().toLocaleDateString('pt-BR')}: ${generated.motivo}`;
       const patch = {
@@ -93,25 +111,6 @@ export default async function handler(req, res) {
       .single();
 
     if (updateErr) return apiError(res, 500, `Falha ao salvar mensagem gerada: ${updateErr.message}`);
-
-    // Soma o custo desta chamada avulsa na rodada de origem, pra o dashboard de
-    // custos continuar refletindo a realidade mesmo depois de "Gerar de novo"
-    // várias vezes num lead. Leads criados manualmente (sem run_id) não têm
-    // rodada pra atribuir — custo real do mesmo jeito, só não some no total por nicho.
-    if (lead.run_id && generated.usage) {
-      const cost = aiCallCostUsd(generated.usage);
-      const { data: run } = await db.from('prospeccao_runs').select('cost_openai, tokens_in, tokens_out').eq('id', lead.run_id).single();
-      if (run) {
-        await db
-          .from('prospeccao_runs')
-          .update({
-            cost_openai: Number(run.cost_openai || 0) + cost,
-            tokens_in: Number(run.tokens_in || 0) + Number(generated.usage.prompt_tokens || 0),
-            tokens_out: Number(run.tokens_out || 0) + Number(generated.usage.completion_tokens || 0),
-          })
-          .eq('id', lead.run_id);
-      }
-    }
 
     return res.status(200).json({ lead: updated });
   } catch (err) {

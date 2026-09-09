@@ -71,6 +71,11 @@ create table if not exists prospeccao_leads (
   channel         text,               -- 'whatsapp' | 'email'
   message_wa      text,
   message_demo    text,               -- 2a mensagem, a do link (add. 19/08/2026)
+  -- Mensagem SEGUINTE: a que vai depois que o lead responde (add. 03/09/2026,
+  -- migrations/2026-09-03-mensagem-seguinte.sql)
+  resposta_lead        text,          -- o que o lead respondeu no WhatsApp, colado pelo Diogo
+  mensagem_seguinte    text,          -- mensagem gerada a partir dessa resposta
+  mensagem_seguinte_at timestamptz,   -- quando foi gerada
   email_subject   text,
   message_email   text,
   followup_wa     text,
@@ -752,3 +757,23 @@ on conflict (slug) do update set
   demo_quem        = excluded.demo_quem,
   demo_olhar       = excluded.demo_olhar,
   demo_fechamento  = excluded.demo_fechamento;
+
+
+-- ---------------------------------------------------------------------------
+-- MIGRACAO 02/09/2026 (4) -- pergunta de fechamento mais forte nos 4 nichos
+-- com case real.
+--
+-- Achado real em producao (Diogo, ao vivo): a IA ignorava 100% das vezes a
+-- pergunta de fechamento configurada aqui e caia sempre em "qual a faixa de
+-- preco das pecas que mais saem hoje" -- pergunta administrativa fraca, sem
+-- gancho. lib/generateMessage.js parou de deixar a IA escrever essa parte
+-- (ver comentario no topo da funcao generateLeadMessage) -- agora usa este
+-- campo de forma DETERMINISTICA, sempre verbatim. As perguntas abaixo atacam
+-- a dor central do reposicionamento: venda que hoje so fecha por perto/por
+-- DM, sem alcancar quem mora longe -- mesmo angulo que ja funciona bem na
+-- mensagem 1 (ver ANGULOS em lib/generateMessage.js).
+-- ---------------------------------------------------------------------------
+update prospeccao_niches set demo_fechamento = 'Hoje, como fica quando alguém de fora quer fechar a compra de uma peça?' where slug = 'semijoias-joias';
+update prospeccao_niches set demo_fechamento = 'Hoje, como fica quando alguém de fora quer comprar uma peça que viu no Instagram?' where slug = 'boutique-moda-feminina';
+update prospeccao_niches set demo_fechamento = 'Hoje, como fica quando alguém de fora quer comprar um moletom que viu no Instagram?' where slug = 'moda-crista';
+update prospeccao_niches set demo_fechamento = 'Hoje, como fica quando alguém de fora quer comprar uma peça que viu no Instagram?' where slug = 'decoracao-casa';
