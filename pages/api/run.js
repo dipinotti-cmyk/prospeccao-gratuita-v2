@@ -1,5 +1,6 @@
 import { supabaseAdmin, apiError } from '../../lib/supabaseAdmin';
 import { encontrarRegiao } from '../../lib/regioesAltaRenda';
+import { apifyTokens } from '../../lib/apifyTokens';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -62,39 +63,61 @@ export default async function handler(req, res) {
     // app, e os leads ficam presos lá (rodada eternamente "running" com 0
     // salvos — bug real visto em produção em 25/07/2026). O parâmetro
     // "webhooks" é um JSON em base64 com a URL a chamar quando a run termina.
+    //
+    // 10/09/2026: só escutava ACTOR.RUN.SUCCEEDED — quando a run FALHAVA do
+    // lado da Apify (erro, abortada, timeout), o webhook nunca era chamado, e
+    // a rodada ficava "running" pra sempre, mesmo tendo terminado com erro.
+    // Mesmo bug de 25/07, só que pelo caminho de falha em vez do de sucesso.
+    // Agora escuta os 3 desfechos possíveis; o webhook decide o que fazer com
+    // cada um.
     const baseUrl = process.env.APP_BASE_URL || `https://${req.headers.host}`;
     const webhooks = Buffer.from(JSON.stringify([
       {
-        eventTypes: ['ACTOR.RUN.SUCCEEDED'],
+        eventTypes: ['ACTOR.RUN.SUCCEEDED', 'ACTOR.RUN.FAILED', 'ACTOR.RUN.ABORTED', 'ACTOR.RUN.TIMED_OUT'],
         requestUrl: `${baseUrl}/api/apify-webhook`,
       },
     ])).toString('base64');
 
-    const apifyResp = await fetch(
-      `https://api.apify.com/v2/acts/${actorId}/runs?token=${process.env.APIFY_TOKEN}&webhooks=${encodeURIComponent(webhooks)}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          searchStringsArray,
-          // 50 por busca quando e um bairro so (nao 30: os ja contatados sao
-          // descartados antes de qualificar, entao precisa de folga pra
-          // sobrar lead novo). Com VARIOS bairros na mesma rodada (cidade da
-          // lista calibrada), reduz pra 20 por bairro — o objetivo e
-          // cobertura ampla, nao esgotar cada bairro, e mantem o custo da
-          // rodada previsivel (20 x 7 bairros ainda cobre bem mais lead que
-          // uma rodada de bairro unico, sem multiplicar o gasto por 7).
-          maxCrawledPlacesPerSearch: searchStringsArray.length > 1 ? 20 : 50,
-          language: 'pt-BR',
-          includeWebResults: false,
-        }),
-      }
-    );
+    const apifyBody = JSON.stringify({
+      searchStringsArray,
+      // 50 por busca quando e um bairro so (nao 30: os ja contatados sao
+      // descartados antes de qualificar, entao precisa de folga pra
+      // sobrar lead novo). Com VARIOS bairros na mesma rodada (cidade da
+      // lista calibrada), reduz pra 20 por bairro — o objetivo e
+      // cobertura ampla, nao esgotar cada bairro, e mantem o custo da
+      // rodada previsivel (20 x 7 bairros ainda cobre bem mais lead que
+      // uma rodada de bairro unico, sem multiplicar o gasto por 7).
+      maxCrawledPlacesPerSearch: searchStringsArray.length > 1 ? 20 : 50,
+      language: 'pt-BR',
+      includeWebResults: false,
+    });
+
+    // Failover pra uma 2a conta Apify (10/09/2026): o plano gratuito da Apify
+    // da uns $5/mes de credito de plataforma por CONTA, nao por token — uma
+    // 2a conta com e-mail diferente dobra a cota sem custar nada. Se a
+    // primeira chave voltar 402 (credito acabou) e existir APIFY_TOKEN_2,
+    // repete a mesma chamada com a segunda antes de desistir. Mesmo padrao
+    // ja usado no analisador-workana pra GEMINI_API_KEY_2.
+    const tokens = apifyTokens();
+    let apifyResp;
+    let apifyStatus;
+    for (let i = 0; i < tokens.length; i++) {
+      apifyResp = await fetch(
+        `https://api.apify.com/v2/acts/${actorId}/runs?token=${tokens[i]}&webhooks=${encodeURIComponent(webhooks)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: apifyBody,
+        }
+      );
+      apifyStatus = apifyResp.status;
+      if (apifyResp.ok || apifyStatus !== 402 || i === tokens.length - 1) break;
+    }
 
     if (!apifyResp.ok) {
       const errBody = await apifyResp.text();
       await db.from('prospeccao_runs').update({ status: 'error', error: errBody.slice(0, 500) }).eq('id', run.id);
-      return apiError(res, 502, `Falha ao chamar a Apify (${apifyResp.status}).`);
+      return apiError(res, 502, `Falha ao chamar a Apify (${apifyStatus}).`);
     }
 
     const apifyJson = await apifyResp.json();

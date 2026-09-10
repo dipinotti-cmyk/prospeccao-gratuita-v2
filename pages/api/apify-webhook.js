@@ -2,6 +2,7 @@ import { supabaseAdmin, apiError } from '../../lib/supabaseAdmin';
 import { generateLeadMessage, aiApiKey, AI_MODEL } from '../../lib/generateMessage';
 import { aiCallCostUsd } from '../../lib/pricing';
 import { encontrarRegiao, leadForaDaRegiao } from '../../lib/regioesAltaRenda';
+import { apifyFetchWithFailover } from '../../lib/apifyTokens';
 
 // Recebe o callback da Apify quando uma run termina, filtra quem não tem
 // site próprio, separa em blocos WhatsApp/e-mail e salva como leads novos.
@@ -37,13 +38,30 @@ export default async function handler(req, res) {
 
   try {
     const db = supabaseAdmin();
-    const { resource } = req.body || {};
+    const { resource, eventType } = req.body || {};
     const datasetId = resource?.defaultDatasetId;
     const apifyRunId = resource?.id;
 
-    if (!datasetId) return apiError(res, 400, 'Payload sem defaultDatasetId.');
-
     const { data: run } = await db.from('prospeccao_runs').select('*').eq('apify_run_id', apifyRunId).single();
+
+    // 10/09/2026: a run agora tambem chama esse webhook quando FALHA, aborta
+    // ou estoura o tempo (ver comentario em pages/api/run.js) — antes so
+    // existia o caminho de sucesso, e uma run que desse errado do lado da
+    // Apify ficava "running" pra sempre, sem ninguem avisar o app. Aqui
+    // fecha esse caminho: marca a rodada como erro e para, sem tentar
+    // processar leads de uma run que nao produziu dataset de verdade.
+    const status = resource?.status || eventType;
+    if (status && status !== 'SUCCEEDED' && !String(eventType || '').endsWith('SUCCEEDED')) {
+      if (run) {
+        await db.from('prospeccao_runs').update({
+          status: 'error',
+          error: `Apify: ${status}`,
+        }).eq('id', run.id);
+      }
+      return res.status(200).json({ ok: true, apifyStatus: status, note: 'Run nao teve sucesso, marcada como erro.' });
+    }
+
+    if (!datasetId) return apiError(res, 400, 'Payload sem defaultDatasetId.');
 
     let niche = null;
     if (run?.niche_slug) {
@@ -51,8 +69,11 @@ export default async function handler(req, res) {
       niche = nicheRow || null;
     }
 
-    const itemsResp = await fetch(
-      `https://api.apify.com/v2/datasets/${datasetId}/items?token=${process.env.APIFY_TOKEN}`
+    // Tenta os dois tokens: essa run pode ter sido criada com APIFY_TOKEN_2
+    // (failover de crédito em pages/api/run.js), e nesse caso o dataset só
+    // existe pra esse token — consultar com o primário sempre falharia.
+    const itemsResp = await apifyFetchWithFailover(
+      (token) => `https://api.apify.com/v2/datasets/${datasetId}/items?token=${token}`
     );
     if (!itemsResp.ok) return apiError(res, 502, 'Falha ao buscar resultados da Apify.');
     const items = await itemsResp.json();
@@ -252,8 +273,8 @@ export default async function handler(req, res) {
     // por isso é buscado aqui (no fim), não em /api/run (no início).
     let costApify = 0;
     try {
-      const runInfoResp = await fetch(
-        `https://api.apify.com/v2/actor-runs/${apifyRunId}?token=${process.env.APIFY_TOKEN}`
+      const runInfoResp = await apifyFetchWithFailover(
+        (token) => `https://api.apify.com/v2/actor-runs/${apifyRunId}?token=${token}`
       );
       if (runInfoResp.ok) {
         const runInfo = await runInfoResp.json();

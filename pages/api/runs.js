@@ -1,4 +1,5 @@
 import { supabaseAdmin, apiError } from '../../lib/supabaseAdmin';
+import { apifyFetchWithFailover } from '../../lib/apifyTokens';
 
 // Lista o histórico de rodadas — e faz auto-recuperação: se uma rodada está
 // "running" no banco mas a Apify já terminou (caso real: runs disparadas antes
@@ -23,8 +24,8 @@ export default async function handler(req, res) {
       let recovered = false;
       for (const run of stuck) {
         try {
-          const infoResp = await fetch(
-            `https://api.apify.com/v2/actor-runs/${run.apify_run_id}?token=${process.env.APIFY_TOKEN}`
+          const infoResp = await apifyFetchWithFailover(
+            (token) => `https://api.apify.com/v2/actor-runs/${run.apify_run_id}?token=${token}`
           );
           if (!infoResp.ok) continue;
           const info = await infoResp.json();
