@@ -39,6 +39,12 @@ export default async function handler(req, res) {
   }
 
   const limite = Number(req.query.limite) > 0 ? Number(req.query.limite) : LOTE_PADRAO;
+  // Sem cursor, toda chamada pegava os mesmos primeiros N leads (status
+  // continua "novo" depois de regenerar o texto, nada avança sozinho) --
+  // achado em 10/09/2026 depois de rodar 3x e "restantes" nunca cair.
+  // after_id resolve: cada chamada devolve o maior id que processou, e quem
+  // chama passa de volta como cursor da proxima.
+  const afterId = Number(req.query.after_id) > 0 ? Number(req.query.after_id) : 0;
 
   const db = supabaseAdmin();
 
@@ -46,6 +52,7 @@ export default async function handler(req, res) {
     .from('prospeccao_leads')
     .select('*')
     .eq('status', 'novo')
+    .gt('id', afterId)
     .order('id', { ascending: true })
     .limit(limite);
 
@@ -131,16 +138,20 @@ export default async function handler(req, res) {
     }
   }
 
+  const maiorId = leads[leads.length - 1].id;
+
   const { count: restantes } = await db
     .from('prospeccao_leads')
     .select('id', { count: 'exact', head: true })
-    .eq('status', 'novo');
+    .eq('status', 'novo')
+    .gt('id', maiorId);
 
   return res.status(200).json({
     total: leads.length,
     regenerados,
     desqualificados,
     restantes: restantes || 0,
+    next_after_id: restantes > 0 ? maiorId : null,
     falhas,
   });
 }
