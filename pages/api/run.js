@@ -62,10 +62,17 @@ export default async function handler(req, res) {
     // app, e os leads ficam presos lá (rodada eternamente "running" com 0
     // salvos — bug real visto em produção em 25/07/2026). O parâmetro
     // "webhooks" é um JSON em base64 com a URL a chamar quando a run termina.
+    //
+    // 10/09/2026: só escutava ACTOR.RUN.SUCCEEDED — quando a run FALHAVA do
+    // lado da Apify (erro, abortada, timeout), o webhook nunca era chamado, e
+    // a rodada ficava "running" pra sempre, mesmo tendo terminado com erro.
+    // Mesmo bug de 25/07, só que pelo caminho de falha em vez do de sucesso.
+    // Agora escuta os 3 desfechos possíveis; o webhook decide o que fazer com
+    // cada um.
     const baseUrl = process.env.APP_BASE_URL || `https://${req.headers.host}`;
     const webhooks = Buffer.from(JSON.stringify([
       {
-        eventTypes: ['ACTOR.RUN.SUCCEEDED'],
+        eventTypes: ['ACTOR.RUN.SUCCEEDED', 'ACTOR.RUN.FAILED', 'ACTOR.RUN.ABORTED', 'ACTOR.RUN.TIMED_OUT'],
         requestUrl: `${baseUrl}/api/apify-webhook`,
       },
     ])).toString('base64');

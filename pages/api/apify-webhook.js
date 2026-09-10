@@ -37,13 +37,30 @@ export default async function handler(req, res) {
 
   try {
     const db = supabaseAdmin();
-    const { resource } = req.body || {};
+    const { resource, eventType } = req.body || {};
     const datasetId = resource?.defaultDatasetId;
     const apifyRunId = resource?.id;
 
-    if (!datasetId) return apiError(res, 400, 'Payload sem defaultDatasetId.');
-
     const { data: run } = await db.from('prospeccao_runs').select('*').eq('apify_run_id', apifyRunId).single();
+
+    // 10/09/2026: a run agora tambem chama esse webhook quando FALHA, aborta
+    // ou estoura o tempo (ver comentario em pages/api/run.js) — antes so
+    // existia o caminho de sucesso, e uma run que desse errado do lado da
+    // Apify ficava "running" pra sempre, sem ninguem avisar o app. Aqui
+    // fecha esse caminho: marca a rodada como erro e para, sem tentar
+    // processar leads de uma run que nao produziu dataset de verdade.
+    const status = resource?.status || eventType;
+    if (status && status !== 'SUCCEEDED' && !String(eventType || '').endsWith('SUCCEEDED')) {
+      if (run) {
+        await db.from('prospeccao_runs').update({
+          status: 'error',
+          error: `Apify: ${status}`,
+        }).eq('id', run.id);
+      }
+      return res.status(200).json({ ok: true, apifyStatus: status, note: 'Run nao teve sucesso, marcada como erro.' });
+    }
+
+    if (!datasetId) return apiError(res, 400, 'Payload sem defaultDatasetId.');
 
     let niche = null;
     if (run?.niche_slug) {
