@@ -19,7 +19,12 @@ export default async function handler(req, res) {
 
     let runs = data || [];
 
-    const stuck = runs.filter((r) => r.status === 'running' && r.apify_run_id).slice(0, 3);
+    // So 1 por chamada: recuperar uma run "SUCCEEDED" reprocessa tudo (busca
+    // itens, gera mensagem com a IA), o mesmo trabalho pesado do webhook, que
+    // pode levar até 45s. Com 3 de uma vez essa rota sozinha passava dos 60s
+    // do maxDuration e o painel nunca via a lista atualizar. Uma por vez ainda
+    // dá conta do atraso: o painel chama de novo em 15-60s.
+    const stuck = runs.filter((r) => r.status === 'running' && r.apify_run_id).slice(0, 1);
     if (stuck.length > 0 && process.env.APIFY_TOKEN) {
       let recovered = false;
       for (const run of stuck) {

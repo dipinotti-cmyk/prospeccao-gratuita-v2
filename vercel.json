@@ -14,6 +14,9 @@
     },
     "pages/api/leads/regenerate-all.js": {
       "maxDuration": 60
+    },
+    "pages/api/runs.js": {
+      "maxDuration": 60
     }
   },
   "headers": [
