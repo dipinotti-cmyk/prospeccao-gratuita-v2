@@ -1,6 +1,9 @@
 import { supabaseAdmin, apiError } from '../../../lib/supabaseAdmin';
-import { generateLeadMessage, aiApiKey, AI_MODEL } from '../../../lib/generateMessage';
+import { generateLeadMessage, generateLeadMessageLojaExistente, aiApiKey, AI_MODEL } from '../../../lib/generateMessage';
 import { aiCallCostUsd } from '../../../lib/pricing';
+
+// 15/09/2026: mesma lista de pages/api/apify-webhook.js.
+const OFERTAS_LOJA_EXISTENTE = ['diagnostico-nuvemshop', 'migracao-plataforma'];
 
 // Regera a mensagem de TODOS os leads com status "novo" (ainda nao enviados),
 // reusando a mesma logica de pages/api/leads/[id]/regenerate.js pra nunca
@@ -78,7 +81,9 @@ export default async function handler(req, res) {
   for (const lead of leads) {
     try {
       const niche = await nicheDoLead(lead);
-      const generated = await generateLeadMessage({ lead, niche, apiKey });
+      const generated = OFERTAS_LOJA_EXISTENTE.includes(lead.oferta)
+        ? await generateLeadMessageLojaExistente({ lead, modo: lead.oferta, apiKey })
+        : await generateLeadMessage({ lead, niche, apiKey });
 
       if (generated.qualificado === false) {
         const motivo = `Não qualificado pela IA em ${new Date().toLocaleDateString('pt-BR')} (regeneração em lote): ${generated.motivo}`;

@@ -1,8 +1,14 @@
 import { supabaseAdmin, apiError } from '../../lib/supabaseAdmin';
-import { generateLeadMessage, aiApiKey, AI_MODEL } from '../../lib/generateMessage';
+import { generateLeadMessage, generateLeadMessageLojaExistente, aiApiKey, AI_MODEL } from '../../lib/generateMessage';
+import { detectarPlataforma } from '../../lib/detectarPlataforma';
 import { aiCallCostUsd } from '../../lib/pricing';
 import { encontrarRegiao, leadForaDaRegiao } from '../../lib/regioesAltaRenda';
 import { apifyFetchWithFailover } from '../../lib/apifyTokens';
+
+// 15/09/2026: os dois modos "loja existente" (ver lib/generateMessage.js e
+// lib/detectarPlataforma.js) miram o OPOSTO do resto do app — só interessa
+// lead que JÁ TEM site próprio, não quem não tem.
+const OFERTAS_LOJA_EXISTENTE = ['diagnostico-nuvemshop', 'migracao-plataforma'];
 
 // Recebe o callback da Apify quando uma run termina, filtra quem não tem
 // site próprio, separa em blocos WhatsApp/e-mail e salva como leads novos.
@@ -106,11 +112,69 @@ export default async function handler(req, res) {
     // Rodada de cidade digitada à mão não tem UF conhecida: segue sem checar.
     const regiao = encontrarRegiao(run?.city || '');
     let foraDaRegiao = 0;
+    let semSiteProprio = 0;
+    let plataformaNaoBate = 0;
+
+    const modoLojaExistente = OFERTAS_LOJA_EXISTENTE.includes(run?.oferta);
+
+    // Detecção de plataforma é chamada de rede (até 8s cada, ver
+    // lib/detectarPlataforma.js) — rodar uma por lead, sequencial, dentro do
+    // loop principal, arriscava estourar os 60s de limite da função com uma
+    // rodada de muitos leads com site. Por isso vai em duas passadas: uma
+    // rápida e síncrona pra separar quem precisa de detecção, depois um
+    // pré-processamento em paralelo (mesmo padrão LOTE/orçamento de tempo já
+    // usado na geração de mensagem, logo abaixo) que preenche um mapa
+    // place_id -> plataforma ANTES do loop principal usar o resultado.
+    const plataformaPorPlaceId = new Map();
+    let semOrcamentoDeteccao = 0;
+    if (modoLojaExistente) {
+      const candidatos = items.filter((item) => {
+        if (item.placeId && jaContatados.has(item.placeId)) return false;
+        return item.website && !/instagram\.com|facebook\.com|linktr\.ee|ifood|doctoralia/i.test(item.website);
+      });
+
+      const LOTE_DETECCAO = 5;
+      const ORCAMENTO_DETECCAO_MS = 12000;
+      const inicioDeteccao = Date.now();
+      for (let ini = 0; ini < candidatos.length; ini += LOTE_DETECCAO) {
+        if (Date.now() - inicioDeteccao > ORCAMENTO_DETECCAO_MS) {
+          semOrcamentoDeteccao += candidatos.length - ini;
+          break;
+        }
+        const bloco = candidatos.slice(ini, ini + LOTE_DETECCAO);
+        const resultados = await Promise.allSettled(bloco.map((item) => detectarPlataforma(item.website)));
+        resultados.forEach((r, i) => {
+          const plataforma = r.status === 'fulfilled' ? r.value : 'desconhecida';
+          plataformaPorPlaceId.set(bloco[i].placeId, plataforma);
+        });
+      }
+    }
 
     for (const item of items) {
       if (item.placeId && jaContatados.has(item.placeId)) { repetidos += 1; continue; }
       const hasOwnSite = item.website && !/instagram\.com|facebook\.com|linktr\.ee|ifood|doctoralia/i.test(item.website);
-      if (hasOwnSite) continue;
+
+      // Modo padrão (criar loja do zero): só interessa quem NÃO tem site
+      // próprio — comportamento de sempre, sem mudança.
+      // Modos "loja existente": é o oposto — só interessa quem TEM, e só
+      // segue se a plataforma detectada (já calculada acima, em paralelo)
+      // bater com o que a oferta promete (nuvemshop pra diagnóstico, outra
+      // plataforma conhecida pra migração). Site fora do ar, bloqueando o
+      // fetch, plataforma não identificada ('desconhecida') ou detecção que
+      // ficou de fora do orçamento de tempo — descarta o lead: é melhor
+      // perder o lead do que mandar mensagem citando plataforma errada.
+      let plataformaDetectada = null;
+      if (modoLojaExistente) {
+        if (!hasOwnSite) { semSiteProprio += 1; continue; }
+        plataformaDetectada = plataformaPorPlaceId.get(item.placeId) || 'desconhecida';
+        const bate =
+          run.oferta === 'diagnostico-nuvemshop'
+            ? plataformaDetectada === 'nuvemshop'
+            : plataformaDetectada !== 'nuvemshop' && plataformaDetectada !== 'desconhecida';
+        if (!bate) { plataformaNaoBate += 1; continue; }
+      } else if (hasOwnSite) {
+        continue;
+      }
 
       const phone = item.phone || null;
       const email = item.email || null;
@@ -155,7 +219,7 @@ export default async function handler(req, res) {
         whatsapp: phone,
         email,
         website: item.website || null,
-        site_tipo: item.website ? 'social' : 'nenhum',
+        site_tipo: plataformaDetectada || (item.website ? 'social' : 'nenhum'),
         gmaps_url: item.url,
         channel,
         status: motivoFora ? 'descartado' : 'novo',
@@ -194,13 +258,19 @@ export default async function handler(req, res) {
 
         const bloco = paraGerar.slice(ini, ini + LOTE);
         const results = await Promise.allSettled(
-          bloco.map((lead) => generateLeadMessage({ lead, niche, apiKey }))
+          bloco.map((lead) =>
+            modoLojaExistente
+              ? generateLeadMessageLojaExistente({ lead, modo: run.oferta, apiKey })
+              : generateLeadMessage({ lead, niche, apiKey })
+          )
         );
 
         results.forEach((r, i) => {
           if (r.status !== 'fulfilled') return;
           const alvo = paraGerar[ini + i];
-          const { qualificado, motivo, message, demo, subject, usage, model } = r.value;
+          // Modo loja existente não devolve demo/motivo — mensagem 2 nasce
+          // depois, na resposta do lead (ver lib/generateMessage.js).
+          const { qualificado = true, motivo, message, demo, subject, usage, model } = r.value;
 
           if (usage) {
             tokensIn += Number(usage.prompt_tokens || 0);
@@ -268,6 +338,7 @@ export default async function handler(req, res) {
     }
     if (falhas > 0) console.error(`[apify-webhook] ${falhas} lead(s) falharam ao salvar na run ${run?.id}`);
     if (foraDaRegiao > 0) console.warn(`[apify-webhook] ${foraDaRegiao} lead(s) fora de ${run?.city} entraram como descartado na run ${run?.id}`);
+    if (modoLojaExistente) console.log(`[apify-webhook] modo ${run.oferta}: ${semSiteProprio} sem site proprio, ${plataformaNaoBate} com plataforma que nao bateu, ${semOrcamentoDeteccao} fora do orcamento de tempo de deteccao, na run ${run?.id}`);
 
     // Custo real da Apify: só fica disponível depois que a run termina —
     // por isso é buscado aqui (no fim), não em /api/run (no início).

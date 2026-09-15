@@ -705,7 +705,9 @@ function NovaProspeccao({ niches, onStarted, onError, onOpenAddModal }) {
         <div className="form-row" style={{ marginTop: 12 }}>
           <label>Oferta desta rodada</label>
           <select value={oferta} onChange={(e) => setOferta(e.target.value)}>
-            <option value="nuvemshop">Loja virtual Nuvemshop</option>
+            <option value="nuvemshop">Loja virtual Nuvemshop (do zero)</option>
+            <option value="diagnostico-nuvemshop">Diagnóstico grátis (já tem loja Nuvemshop)</option>
+            <option value="migracao-plataforma">Migração pra Nuvemshop (loja em outra plataforma)</option>
             <option value="site">Site profissional (legado)</option>
             <option value="automacao">Automação de WhatsApp (legado)</option>
             <option value="completo">Pacote completo (legado)</option>
@@ -1467,7 +1469,9 @@ function AddLeadModal({ niches, onClose, onCreated }) {
           <div className="form-row">
             <label>Oferta</label>
             <select value={form.oferta} onChange={(e) => set('oferta', e.target.value)}>
-              <option value="nuvemshop">Loja virtual Nuvemshop</option>
+              <option value="nuvemshop">Loja virtual Nuvemshop (do zero)</option>
+              <option value="diagnostico-nuvemshop">Diagnóstico grátis (já tem loja Nuvemshop)</option>
+              <option value="migracao-plataforma">Migração pra Nuvemshop (loja em outra plataforma)</option>
               <option value="site">Site profissional (legado)</option>
               <option value="automacao">Automação de WhatsApp (legado)</option>
               <option value="completo">Pacote completo (legado)</option>

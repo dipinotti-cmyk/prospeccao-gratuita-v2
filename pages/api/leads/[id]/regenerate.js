@@ -1,6 +1,11 @@
 import { supabaseAdmin, apiError } from '../../../../lib/supabaseAdmin';
-import { generateLeadMessage, aiApiKey, AI_MODEL } from '../../../../lib/generateMessage';
+import { generateLeadMessage, generateLeadMessageLojaExistente, aiApiKey, AI_MODEL } from '../../../../lib/generateMessage';
 import { aiCallCostUsd } from '../../../../lib/pricing';
+
+// 15/09/2026: mesma lista de pages/api/apify-webhook.js — duplicada aqui de
+// propósito (arquivos diferentes, import circular seria pior que repetir uma
+// constante de 2 valores).
+const OFERTAS_LOJA_EXISTENTE = ['diagnostico-nuvemshop', 'migracao-plataforma'];
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -36,7 +41,9 @@ export default async function handler(req, res) {
 
     let generated;
     try {
-      generated = await generateLeadMessage({ lead, niche, apiKey });
+      generated = OFERTAS_LOJA_EXISTENTE.includes(lead.oferta)
+        ? await generateLeadMessageLojaExistente({ lead, modo: lead.oferta, apiKey })
+        : await generateLeadMessage({ lead, niche, apiKey });
     } catch (genErr) {
       return apiError(res, 502, genErr.message);
     }

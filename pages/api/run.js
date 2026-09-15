@@ -21,7 +21,18 @@ export default async function handler(req, res) {
     return apiError(res, 400, 'Informe "niche" e "city".');
   }
 
-  const ofertaValida = ['nuvemshop', 'site', 'automacao', 'completo'].includes(oferta) ? oferta : 'nuvemshop';
+  const ofertaValida = [
+    'nuvemshop',
+    'site',
+    'automacao',
+    'completo',
+    // 15/09/2026: leads que JÁ têm loja — pipeline inverte o filtro de site
+    // próprio em pages/api/apify-webhook.js pra esses dois modos.
+    'diagnostico-nuvemshop',
+    'migracao-plataforma',
+  ].includes(oferta)
+    ? oferta
+    : 'nuvemshop';
 
   try {
     const db = supabaseAdmin();
