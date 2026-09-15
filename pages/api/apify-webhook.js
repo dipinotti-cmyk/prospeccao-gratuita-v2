@@ -133,8 +133,13 @@ export default async function handler(req, res) {
         return item.website && !/instagram\.com|facebook\.com|linktr\.ee|ifood|doctoralia/i.test(item.website);
       });
 
-      const LOTE_DETECCAO = 5;
-      const ORCAMENTO_DETECCAO_MS = 12000;
+      // 15/09/2026 (2): 5/12000 estava deixando 30-50% dos candidatos de fora
+      // por orçamento em runs reais (log da run 107: 52 de ~163 candidatos).
+      // A geração de mensagem que vem depois processa só quem passou no
+      // filtro — pra estes dois modos isso costuma ser poucos leads, então
+      // sobra folga real no teto de 60s da função pra dar mais tempo aqui.
+      const LOTE_DETECCAO = 10;
+      const ORCAMENTO_DETECCAO_MS = 25000;
       const inicioDeteccao = Date.now();
       for (let ini = 0; ini < candidatos.length; ini += LOTE_DETECCAO) {
         if (Date.now() - inicioDeteccao > ORCAMENTO_DETECCAO_MS) {
