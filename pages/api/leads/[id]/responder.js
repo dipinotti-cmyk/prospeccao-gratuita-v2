@@ -1,7 +1,16 @@
 import { supabaseAdmin, apiError } from '../../../../lib/supabaseAdmin';
 import { aiApiKey } from '../../../../lib/generateMessage';
 import { gerarMensagemSeguinte } from '../../../../lib/generateReply';
+import { gerarMensagemSeguinteLojaExistente } from '../../../../lib/generateReplyLojaExistente';
 import { aiCallCostUsd } from '../../../../lib/pricing';
+
+// 15/09/2026: mesma lista de pages/api/apify-webhook.js — leads que JÁ têm
+// loja não podem cair no gerador de loja NOVA (gerarMensagemSeguinte), que
+// pitcha preço de construir do zero pra quem já vende de verdade. Achado em
+// produção com o lead "Poder de Preta" (modo diagnostico-nuvemshop): a
+// mensagem seguinte ofereceu loja nova por R$1.900 pra um dono de loja
+// Nuvemshop já no ar.
+const OFERTAS_LOJA_EXISTENTE = ['diagnostico-nuvemshop', 'migracao-plataforma'];
 
 // O lead respondeu no WhatsApp. O Diogo cola aqui o que ele escreveu e sai a
 // mensagem SEGUINTE, pronta pra copiar — antes disso ele escrevia na mão toda
@@ -53,7 +62,9 @@ export default async function handler(req, res) {
 
     let gerado;
     try {
-      gerado = await gerarMensagemSeguinte({ lead, respostaLead, niche, apiKey });
+      gerado = OFERTAS_LOJA_EXISTENTE.includes(lead.oferta)
+        ? await gerarMensagemSeguinteLojaExistente({ lead, modo: lead.oferta, respostaLead, niche, apiKey })
+        : await gerarMensagemSeguinte({ lead, respostaLead, niche, apiKey });
     } catch (genErr) {
       return apiError(res, 502, genErr.message);
     }
